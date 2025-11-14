@@ -1,0 +1,16 @@
+Flask
+Flask-SQLAlchemy
+python-dotenv
+requests
+gunicorn
+pytz
+APScheduler
+Python-IO
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+pandas
+pytz
+psycopg2-binary
+
