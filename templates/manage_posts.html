@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics — Published Posts</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        
+        body { background: #f5f7fa; }
+        
+        .topbar {
+            background: linear-gradient(135deg, #1877f2 0%, #0a66c2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(24, 119, 242, 0.15);
+            padding: 1rem 0;
+        }
+        
+        .brand {
+            font-weight: 800;
+            font-size: 1.4rem;
+            letter-spacing: -0.8px;
+        }
+        
+        .btn-outline-light {
+            border-width: 2px;
+            color: white;
+            transition: all 0.2s;
+        }
+        
+        .btn-outline-light:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .page-header {
+            background: white;
+            border-bottom: 1px solid #e8f0ff;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 0;
+        }
+        
+        .page-subtitle {
+            color: #9ca3af;
+            font-size: 1rem;
+            margin: 0.5rem 0 0 0;
+        }
+        
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #1877f2;
+            text-decoration: none;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            transition: all 0.2s;
+        }
+        
+        .back-button:hover {
+            transform: translateX(-4px);
+            color: #0a66c2;
+        }
+        
+        /* Key Metrics Summary */
+        .metrics-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .metric-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            border-top: 3px solid #d0d7de;
+            transition: all 0.2s;
+        }
+        
+        .metric-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            transform: translateY(-2px);
+        }
+        
+        .metric-card.active {
+            border-top-color: #1877f2;
+            background: linear-gradient(135deg, rgba(24, 119, 242, 0.02) 0%, rgba(10, 102, 194, 0.01) 100%);
+        }
+        
+        .metric-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .metric-icon {
+            width: 40px;
+            height: 40px;
+            background: #f5f7fa;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: #1877f2;
+        }
+        
+        .metric-label {
+            font-size: 0.85rem;
+            color: #9ca3af;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0f172a;
+            line-height: 1;
+        }
+        
+        .metric-change {
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            color: #9ca3af;
+        }
+        
+        .metric-change.positive { color: #31a24c; }
+        .metric-change.negative { color: #dc3545; }
+        
+        /* Posts Grid */
+        .posts-container {
+            margin-bottom: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .posts-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+        
+        .post-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            overflow: hidden;
+            transition: all 0.2s;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+        }
+        
+        .post-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        
+        @media (max-width: 992px) {
+            .post-card {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .post-content {
+            padding: 1.5rem;
+            border-right: 1px solid #e8f0ff;
+        }
+        
+        .post-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        
+        .post-timestamp {
+            font-size: 0.9rem;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .post-id {
+            font-size: 0.8rem;
+            color: #9ca3af;
+            font-family: monospace;
+            background: #f5f7fa;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .post-message {
+            color: #0f172a;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+            max-height: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .post-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            background: #f5f7fa;
+            color: #1877f2;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .post-action:hover {
+            background: #1877f2;
+            color: white;
+        }
+        
+        .post-metrics {
+            padding: 1.5rem;
+            background: #f5f7fa;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .metric-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
+        
+        .metric-row-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #9ca3af;
+        }
+        
+        .metric-row-label i {
+            font-size: 1rem;
+            color: #1877f2;
+        }
+        
+        .metric-row-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        
+        .metric-divider {
+            height: 1px;
+            background: #e8f0ff;
+            margin: 0.5rem 0;
+        }
+        
+        .metric-rate {
+            padding-top: 0.5rem;
+            text-align: right;
+        }
+        
+        .rate-label {
+            font-size: 0.75rem;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+        
+        .rate-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1877f2;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .empty-state i {
+            font-size: 3.5rem;
+            color: #d0d7de;
+            margin-bottom: 1rem;
+        }
+        
+        .empty-state h3 {
+            color: #0f172a;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .empty-state p {
+            color: #9ca3af;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top navigation -->
+    <nav class="topbar">
+        <div class="container-fluid d-flex align-items-center">
+            <div class="brand">
+                <i class="fas fa-paper-plane"></i> Postly
+            </div>
+            <div class="ms-auto">
+                <a href="/schedule" class="btn btn-outline-light btn-sm me-2">
+                    <i class="fas fa-hourglass-half"></i> Schedule
+                </a>
+                <a href="/" class="btn btn-outline-light btn-sm">
+                    <i class="fas fa-arrow-left"></i> Home
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="container-fluid">
+            <h1 class="page-title">
+                <i class="fas fa-chart-line" style="color: #1877f2;"></i> Analytics
+            </h1>
+            <p class="page-subtitle">Track your posts performance and engagement metrics</p>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container-fluid py-4" style="max-width: 1400px; margin: 0 auto;">
+        {% if not page_id %}
+            <!-- Page Selection Screen -->
+            <a href="/" class="back-button">
+                <i class="fas fa-arrow-left"></i> Back to Home
+            </a>
+
+            <div style="background: white; border-radius: 8px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+                <h5 style="font-weight: 700; color: #0f172a; margin-bottom: 1.5rem;">
+                    <i class="fas fa-cube"></i> Select a Page to View Analytics
+                </h5>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;">
+                    {% if pages %}
+                        {% for page in pages %}
+                            <a href="{{ url_for('manage_posts', page_id=page.page_id) }}" style="text-decoration: none; color: inherit;">
+                                <div style="background: linear-gradient(135deg, #f5f7fa 0%, #e8f0ff 100%); border: 2px solid #e8f0ff; border-radius: 8px; padding: 1.5rem; cursor: pointer; transition: all 0.2s; text-align: center;" onmouseover="this.style.borderColor='#1877f2'; this.style.boxShadow='0 4px 12px rgba(24, 119, 242, 0.15)';" onmouseout="this.style.borderColor='#e8f0ff'; this.style.boxShadow='none';">
+                                    <div style="font-weight: 700; color: #0f172a; margin-bottom: 0.5rem;">{{ page.page_name }}</div>
+                                    <div style="color: #9ca3af; font-size: 0.9rem;">
+                                        <i class="fas fa-file-alt"></i> {{ page.posts_count or 0 }} posts
+                                    </div>
+                                </div>
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <div style="grid-column: 1 / -1; padding: 2rem; color: #9ca3af; text-align: center;">
+                            <i class="fas fa-inbox" style="font-size: 2.5rem; margin-bottom: 1rem; display: block;"></i>
+                            <p>No pages found. Connect your Facebook account to get started!</p>
+                            <a href="/login" class="btn btn-primary mt-2">
+                                <i class="fas fa-link"></i> Connect Facebook
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <!-- Analytics Dashboard -->
+            <a href="/manage_posts" class="back-button">
+                <i class="fas fa-arrow-left"></i> Back to Pages
+            </a>
+
+            <!-- Key Metrics Summary -->
+            <div class="metrics-summary">
+                <div class="metric-card active">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
+                        <div class="metric-label">Total Posts</div>
+                    </div>
+                    <div class="metric-value">{{ posts|length }}</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-heart"></i>
+                        </div>
+                        <div class="metric-label">Total Likes</div>
+                    </div>
+                    <div class="metric-value">{{ total_likes|default(0)|int }}</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-comment"></i>
+                        </div>
+                        <div class="metric-label">Total Comments</div>
+                    </div>
+                    <div class="metric-value">{{ total_comments|default(0)|int }}</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-share"></i>
+                        </div>
+                        <div class="metric-label">Total Shares</div>
+                    </div>
+                    <div class="metric-value">{{ total_shares|default(0)|int }}</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-eye"></i>
+                        </div>
+                        <div class="metric-label">Total Impressions</div>
+                    </div>
+                    <div class="metric-value">{{ total_impressions|default(0)|int }}</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">
+                            <i class="fas fa-mouse"></i>
+                        </div>
+                        <div class="metric-label">Total Clicks</div>
+                    </div>
+                    <div class="metric-value">{{ total_clicks|default(0)|int }}</div>
+                </div>
+            </div>
+
+            <!-- Posts Analytics -->
+            <div class="posts-container">
+                <div class="section-title">
+                    <i class="fas fa-list-check"></i> Post Performance
+                </div>
+
+                {% if posts %}
+                    <div class="posts-grid">
+                        {% for post in posts %}
+                            <div class="post-card">
+                                <div class="post-content">
+                                    <div class="post-header">
+                                        <div style="flex: 1;">
+                                            <div class="post-timestamp">
+                                                <i class="fas fa-calendar-alt"></i>
+                                                {{ post.created_at.strftime('%b %d, %Y at %I:%M %p') if post.created_at else 'N/A' }}
+                                            </div>
+                                            <div class="post-id" style="margin-top: 0.5rem;">{{ post.id }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="post-message">{{ post.message or post.get('message', 'No message') }}</div>
+                                    <a href="https://facebook.com/{{ post.id }}" target="_blank" class="post-action">
+                                        <i class="fas fa-external-link-alt"></i> View on Facebook
+                                    </a>
+                                </div>
+                                <div class="post-metrics">
+                                    <div class="metric-row">
+                                        <div class="metric-row-label">
+                                            <i class="fas fa-heart"></i> Likes
+                                        </div>
+                                        <div class="metric-row-value">{{ post.get('likes', 0) or (post.metrics.get('likes', 0) if post.metrics else 0) }}</div>
+                                    </div>
+                                    
+                                    <div class="metric-row">
+                                        <div class="metric-row-label">
+                                            <i class="fas fa-comment"></i> Comments
+                                        </div>
+                                        <div class="metric-row-value">{{ post.get('comments', 0) or (post.metrics.get('comments', 0) if post.metrics else 0) }}</div>
+                                    </div>
+                                    
+                                    <div class="metric-row">
+                                        <div class="metric-row-label">
+                                            <i class="fas fa-share"></i> Shares
+                                        </div>
+                                        <div class="metric-row-value">{{ post.get('shares', 0) or (post.metrics.get('shares', 0) if post.metrics else 0) }}</div>
+                                    </div>
+                                    
+                                    <div class="metric-divider"></div>
+                                    
+                                    <div class="metric-row">
+                                        <div class="metric-row-label">
+                                            <i class="fas fa-eye"></i> Impressions
+                                        </div>
+                                        <div class="metric-row-value">{{ post.get('impressions', 0) or (post.metrics.get('impressions', 0) if post.metrics else 0) }}</div>
+                                    </div>
+                                    
+                                    <div class="metric-row">
+                                        <div class="metric-row-label">
+                                            <i class="fas fa-mouse"></i> Clicks
+                                        </div>
+                                        <div class="metric-row-value">{{ post.get('clicks', 0) or (post.metrics.get('clicks', 0) if post.metrics else 0) }}</div>
+                                    </div>
+                                    
+                                    <div class="metric-divider"></div>
+                                    
+                                    <div class="metric-row">
+                                        <span class="rate-label">Engagement Rate</span>
+                                        {% set eng_rate = ((post.get('likes', 0) or (post.metrics.get('likes', 0) if post.metrics else 0)) + (post.get('comments', 0) or (post.metrics.get('comments', 0) if post.metrics else 0)) + (post.get('shares', 0) or (post.metrics.get('shares', 0) if post.metrics else 0))) / ((post.get('impressions', 1) or (post.metrics.get('impressions', 1) if post.metrics else 1)) or 1) * 100 %}
+                                        <span class="rate-value">{{ "%.2f"|format(eng_rate) }}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <h3>No Posts Yet</h3>
+                        <p>Posts from this page will appear here once they are published.</p>
+                        <a href="/schedule" class="btn btn-primary mt-3">
+                            <i class="fas fa-calendar-alt"></i> View Schedule
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

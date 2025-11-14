@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule — Schedule Posts</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css">
+    <style>
+        * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        
+        body { background: #f5f7fa; }
+        
+        .topbar {
+            background: linear-gradient(135deg, #1877f2 0%, #0a66c2 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(24, 119, 242, 0.15);
+            padding: 1rem 0;
+        }
+        
+        .brand {
+            font-weight: 800;
+            font-size: 1.4rem;
+            letter-spacing: -0.8px;
+        }
+        
+        .page-header {
+            background: white;
+            border-bottom: 1px solid #e8f0ff;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 0;
+        }
+        
+        .page-subtitle {
+            color: #9ca3af;
+            font-size: 1rem;
+            margin: 0.5rem 0 0 0;
+        }
+        
+        .card-ghost {
+            border: 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        
+        .card-ghost:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+        
+        .nav-tabs {
+            border-bottom: 2px solid #e8f0ff;
+            gap: 0.5rem;
+        }
+        
+        .nav-tabs .nav-link {
+            color: #626f86;
+            border: 0;
+            border-bottom: 3px solid transparent;
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+            transition: all 0.2s;
+        }
+        
+        .nav-tabs .nav-link:hover {
+            color: #1877f2;
+            background: rgba(24, 119, 242, 0.05);
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #1877f2;
+            border-bottom-color: #1877f2;
+        }
+        
+        .form-control, .form-select {
+            border-radius: 6px;
+            border: 1px solid #d0d7de;
+            transition: all 0.2s;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: #1877f2;
+            box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #1877f2 0%, #0a66c2 100%);
+            border: 0;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #0a66c2 0%, #055399 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+        }
+        
+        #calendar {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+        }
+        
+        .fc-button-primary {
+            background-color: #1877f2 !important;
+            border-color: #1877f2 !important;
+        }
+        
+        .fc-button-primary:hover {
+            background-color: #0a66c2 !important;
+        }
+        
+        .fc-button-primary:not(:disabled).fc-button-active {
+            background-color: #0a66c2 !important;
+            border-color: #0a66c2 !important;
+        }
+        
+        .queued-posts-section {
+            margin-bottom: 2rem;
+        }
+        
+        .queued-posts-title {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #0f172a;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .queued-post-card {
+            background: white;
+            border-left: 4px solid #1877f2;
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            transition: all 0.2s;
+        }
+        
+        .queued-post-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            transform: translateY(-2px);
+        }
+        
+        .queued-post-card.completed {
+            border-left-color: #31a24c;
+            background: linear-gradient(135deg, rgba(49, 162, 76, 0.02) 0%, rgba(49, 162, 76, 0) 100%);
+        }
+        
+        .queued-post-card.failed {
+            border-left-color: #dc3545;
+            background: linear-gradient(135deg, rgba(220, 53, 69, 0.02) 0%, rgba(220, 53, 69, 0) 100%);
+        }
+        
+        .post-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+        
+        .post-time {
+            font-size: 0.9rem;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .status-badge.pending {
+            background: rgba(24, 119, 242, 0.15);
+            color: #1877f2;
+        }
+        
+        .status-badge.completed {
+            background: rgba(49, 162, 76, 0.15);
+            color: #31a24c;
+        }
+        
+        .status-badge.failed {
+            background: rgba(220, 53, 69, 0.15);
+            color: #dc3545;
+        }
+        
+        .post-message {
+            color: #0f172a;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        
+        .post-meta {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.9rem;
+            color: #9ca3af;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .post-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .media-gallery {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .media-item {
+            position: relative;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .media-item img,
+        .media-item video {
+            max-width: 150px;
+            max-height: 150px;
+            display: block;
+        }
+        
+        .post-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        
+        .action-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid #d0d7de;
+            background: white;
+            color: #1877f2;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        .action-btn:hover {
+            background: #f5f7fa;
+            border-color: #1877f2;
+        }
+        
+        .action-btn.cancel-btn:hover {
+            background: #fef2f2;
+            border-color: #dc3545;
+            color: #dc3545;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #9ca3af;
+        }
+        
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .sidebar-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .sidebar-section h6 {
+            font-weight: 700;
+            color: #626f86;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+        }
+        
+        .media-preview {
+            position: relative;
+            display: inline-block;
+            margin: 8px;
+        }
+        
+        .media-preview img,
+        .media-preview video {
+            max-width: 120px;
+            max-height: 120px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .remove-media {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            border: 2px solid white;
+        }
+        
+        .remove-media:hover {
+            transform: scale(1.1);
+        }
+        
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #1877f2;
+            text-decoration: none;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            transition: all 0.2s;
+        }
+        
+        .back-button:hover {
+            transform: translateX(-4px);
+        }
+    </style>
+</head>
+<body>
+    <!-- Top navigation -->
+    <nav class="topbar">
+        <div class="container-fluid d-flex align-items-center">
+            <div class="brand">
+                <i class="fas fa-paper-plane"></i> Postly
+            </div>
+            <div class="ms-auto">
+                <a href="/" class="btn btn-outline-light btn-sm me-2">
+                    <i class="fas fa-arrow-left"></i> Back to Home
+                </a>
+                <a href="/manage_posts" class="btn btn-outline-light btn-sm">
+                    <i class="fas fa-check-circle"></i> Sent
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="container-fluid">
+            <h1 class="page-title">
+                <i class="fas fa-hourglass-half" style="color: #1877f2;"></i> Schedule
+            </h1>
+            <p class="page-subtitle">View your scheduled posts and upcoming content</p>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="container-fluid py-4" style="max-width: 1400px; margin: 0 auto;">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-3">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            <i class="fas fa-info-circle"></i> {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="row g-4">
+            <!-- Main Content - Calendar and Posts -->
+            <div class="col-lg-8">
+                <!-- Calendar Section -->
+                <div class="card-ghost">
+                    <div style="padding: 1.5rem;">
+                        <h5 style="font-weight: 700; color: #0f172a; margin-bottom: 1rem;">
+                            <i class="fas fa-calendar-alt"></i> Posting Calendar
+                        </h5>
+                        <div id="calendar"></div>
+                    </div>
+                </div>
+
+                <!-- Queued Posts Section -->
+                <div class="queued-posts-section">
+                    <div class="queued-posts-title">
+                        <i class="fas fa-list-check"></i> Scheduled Posts
+                    </div>
+
+                    {% if database_posts %}
+                        <div style="margin-bottom: 2rem;">
+                            <h6 style="color: #9ca3af; font-weight: 600; margin-bottom: 1rem;">
+                                <i class="fas fa-database"></i> App Created ({{ database_posts|length }})
+                            </h6>
+                            {% for post in database_posts %}
+                                <div class="queued-post-card {{ post.status }}">
+                                    <div class="post-header">
+                                        <div class="post-time">
+                                            <i class="fas fa-clock"></i>
+                                            {{ post.scheduled_time.strftime('%b %d, %Y at %I:%M %p') }}
+                                        </div>
+                                        <span class="status-badge {{ post.status }}">
+                                            <i class="fas fa-{% if post.status == 'pending' %}hourglass-half{% elif post.status == 'completed' %}check-circle{% else %}exclamation-circle{% endif %}"></i>
+                                            {{ post.status|capitalize }}
+                                        </span>
+                                    </div>
+                                    <div class="post-message">{{ post.message }}</div>
+                                    <div class="post-meta">
+                                        <div class="post-meta-item">
+                                            <i class="fas fa-file-invoice"></i> <strong>Page ID:</strong> {{ post.page_id }}
+                                        </div>
+                                        <div class="post-meta-item">
+                                            <i class="fas fa-history"></i> <strong>Created:</strong> {{ post.created_at.strftime('%b %d, %Y') }}
+                                        </div>
+                                    </div>
+                                    {% if post.media_paths_list %}
+                                        <div class="media-gallery">
+                                            {% for media in post.media_paths_list %}
+                                                <div class="media-item">
+                                                    {% if media.startswith('http') %}
+                                                        {# Google Drive or external URL #}
+                                                        <a href="{{ media }}" target="_blank" class="btn btn-sm btn-outline-info" title="Open in Google Drive">
+                                                            <i class="fas fa-cloud"></i> Google Drive
+                                                        </a>
+                                                    {% elif media.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) %}
+                                                        <img src="{{ media }}" alt="Post media">
+                                                    {% elif media.lower().endswith(('.mp4', '.webm', '.avi', '.mov')) %}
+                                                        <video controls><source src="{{ media }}"></video>
+                                                    {% else %}
+                                                        <span class="btn btn-sm btn-outline-secondary">
+                                                            <i class="fas fa-file"></i> {{ media.split('/')[-1] }}
+                                                        </span>
+                                                    {% endif %}
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="post-actions">
+                                        {% if post.status == 'pending' %}
+                                            <button class="action-btn cancel-btn" onclick="cancelPost('{{ post.id }}')">
+                                                <i class="fas fa-times"></i> Cancel
+                                            </button>
+                                        {% endif %}
+                                        <a href="https://facebook.com/{{ post.page_id }}" target="_blank" class="action-btn">
+                                            <i class="fas fa-external-link-alt"></i> View Page
+                                        </a>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if sheet_posts %}
+                        <div>
+                            <h6 style="color: #9ca3af; font-weight: 600; margin-bottom: 1rem;">
+                                <i class="fas fa-sheet-awesome"></i> Google Sheets ({{ sheet_posts|length }})
+                            </h6>
+                            {% for post in sheet_posts %}
+                                <div class="queued-post-card {{ post['status'] }}">
+                                    <div class="post-header">
+                                        <div class="post-time">
+                                            <i class="fas fa-clock"></i>
+                                            {{ post['scheduled_time'] }}
+                                        </div>
+                                        <span class="status-badge {{ post['status'] }}">
+                                            <i class="fas fa-{% if post['status'] == 'pending' %}hourglass-half{% elif post['status'] == 'posted' %}check-circle{% else %}exclamation-circle{% endif %}"></i>
+                                            {{ post['status']|capitalize }}
+                                        </span>
+                                    </div>
+                                    <div class="post-message">{{ post['message'] }}</div>
+                                    <div class="post-meta">
+                                        <div class="post-meta-item">
+                                            <i class="fas fa-file-invoice"></i> <strong>Pages:</strong> {{ post['page_ids'] }}
+                                        </div>
+                                        {% if post['author'] %}
+                                        <div class="post-meta-item">
+                                            <i class="fas fa-user"></i> <strong>Author:</strong> {{ post['author'] }}
+                                        </div>
+                                        {% endif %}
+                                        {% if post['campaign'] %}
+                                        <div class="post-meta-item">
+                                            <i class="fas fa-tag"></i> <strong>Campaign:</strong> {{ post['campaign'] }}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% if post['notes'] %}
+                                        <div style="background: #f5f7fa; padding: 1rem; border-radius: 6px; margin-top: 1rem; border-left: 3px solid #1877f2;">
+                                            <strong style="color: #0f172a;">Notes:</strong>
+                                            <p style="margin: 0.5rem 0 0 0; color: #626f86;">{{ post['notes'] }}</p>
+                                        </div>
+                                    {% endif %}
+                                    {% if post['media_urls'] %}
+                                        <div class="media-gallery" style="margin-top: 1rem;">
+                                            {% for url in post['media_urls'] %}
+                                                <a href="{{ url }}" target="_blank" class="media-item" style="padding: 0.5rem; background: #f5f7fa; display: flex; align-items: center; justify-content: center;">
+                                                    <i class="fas fa-link"></i> Media Link
+                                                </a>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if not database_posts and not sheet_posts %}
+                        <div class="empty-state">
+                            <i class="fas fa-inbox"></i>
+                            <h5>No Scheduled Posts</h5>
+                            <p>Create a new post to get started!</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-4">
+                <!-- Schedule Post Form -->
+                <div class="sidebar-section">
+                    <h6>
+                        <i class="fas fa-plus-circle"></i> Schedule New Post
+                    </h6>
+                    <form id="scheduleForm" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Select Page</strong></label>
+                            <select class="form-select" id="page_id" name="page_id" required>
+                                <option value="">(Select a page)</option>
+                                {% for page in pages %}
+                                    <option value="{{ page.page_id }}">{{ page.page_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Message</strong></label>
+                            <textarea class="form-control" id="message" name="message" rows="3" placeholder="What's on your mind?" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Schedule for</strong></label>
+                            <input type="text" class="form-control" id="scheduleDatePicker" placeholder="Pick a date & time" required>
+                            <input type="hidden" name="scheduled_time" id="scheduledTimeInput">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Media (Optional)</strong></label>
+                            
+                            <!-- Media Tabs -->
+                            <div class="btn-group w-100 mb-3" role="group">
+                                <input type="radio" class="btn-check" name="mediaSource" id="mediaLocal" value="local" checked onchange="toggleMediaInput('local')">
+                                <label class="btn btn-outline-primary" for="mediaLocal">
+                                    <i class="fas fa-computer"></i> Local Files
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="mediaSource" id="mediaGoogle" value="google" onchange="toggleMediaInput('google')">
+                                <label class="btn btn-outline-primary" for="mediaGoogle">
+                                    <i class="fas fa-cloud"></i> Google Drive
+                                </label>
+                            </div>
+
+                            <!-- Local file upload -->
+                            <div id="localMediaInput" style="display: block;">
+                                <input type="file" id="media" name="media[]" class="form-control" accept="image/*,video/*" multiple>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="fas fa-image"></i> Upload images and videos
+                                </small>
+                            </div>
+
+                            <!-- Google Drive URL input -->
+                            <div id="googleMediaInput" style="display: none;">
+                                <input type="text" id="googleDriveUrl" class="form-control" placeholder="Paste Google Drive link here...">
+                                <small class="text-muted d-block mt-2">
+                                    <i class="fas fa-link"></i> Paste shareable Google Drive link (https://drive.google.com/...)
+                                </small>
+                                <div id="googleDrivePreview" style="margin-top: 0.5rem;"></div>
+                            </div>
+                        </div>
+                        <div id="mediaPreview"></div>
+                        <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                            <i class="fas fa-paper-plane"></i> Schedule Post
+                        </button>
+                    </form>
+                    <div id="formMessage" style="margin-top: 1rem; display: none;"></div>
+                </div>
+
+                <!-- Stats Card -->
+                <div class="sidebar-section" style="background: linear-gradient(135deg, rgba(24, 119, 242, 0.1) 0%, rgba(10, 102, 194, 0.05) 100%); border-left: 4px solid #1877f2;">
+                    <h6>
+                        <i class="fas fa-chart-bar"></i> Schedule Stats
+                    </h6>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: 800; color: #1877f2;">
+                                {{ (database_posts|length) + (sheet_posts|length) }}
+                            </div>
+                            <div style="font-size: 0.9rem; color: #9ca3af;">Total Posts</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: 800; color: #31a24c;">
+                                {{ database_posts|selectattr('status', 'equalto', 'completed')|list|length }}
+                            </div>
+                            <div style="font-size: 0.9rem; color: #9ca3af;">Posted</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Links Card -->
+                <div class="sidebar-section">
+                    <h6>
+                        <i class="fas fa-lightning-bolt"></i> Quick Links
+                    </h6>
+                    <a href="/" class="btn btn-outline-primary w-100 mb-2" style="border-radius: 6px; justify-content: start;">
+                        <i class="fas fa-home"></i> Home
+                    </a>
+                    <a href="/manage_posts" class="btn btn-outline-primary w-100" style="border-radius: 6px; justify-content: start;">
+                        <i class="fas fa-check-circle"></i> View Sent Posts
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <script>
+        // Setup media preview
+        let currentMedia = [];
+        
+        function updateMedia() {
+            const preview = document.getElementById('mediaPreview');
+            preview.innerHTML = '';
+            currentMedia.forEach((f, i) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const box = document.createElement('div');
+                    box.className = 'media-preview';
+                    if (f.type.startsWith('image/')) {
+                        box.innerHTML = `<img src="${e.target.result}" alt="Preview">
+                                      <div class="remove-media" data-index="${i}">×</div>`;
+                    } else {
+                        box.innerHTML = `<video src="${e.target.result}" controls></video>
+                                      <div class="remove-media" data-index="${i}">×</div>`;
+                    }
+                    box.querySelector('.remove-media').onclick = () => {
+                        currentMedia.splice(i, 1);
+                        updateMedia();
+                    };
+                    preview.appendChild(box);
+                };
+                reader.readAsDataURL(f);
+            });
+        }
+        
+        document.querySelector('input[name="media[]"]').addEventListener('change', function(e) {
+            const preview = document.getElementById('mediaPreview');
+            const files = Array.from(e.target.files || []);
+            currentMedia = currentMedia.concat(files);
+            updateMedia();
+        });
+
+        // Toggle between local and Google Drive media input
+        function toggleMediaInput(source) {
+            document.getElementById('localMediaInput').style.display = source === 'local' ? 'block' : 'none';
+            document.getElementById('googleMediaInput').style.display = source === 'google' ? 'block' : 'none';
+        }
+
+        // Handle Google Drive URL input
+        document.getElementById('googleDriveUrl').addEventListener('input', function(e) {
+            const url = this.value.trim();
+            const preview = document.getElementById('googleDrivePreview');
+            
+            if (url) {
+                // Extract Google Drive file ID from URL
+                const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+                if (fileIdMatch) {
+                    const fileId = fileIdMatch[1];
+                    preview.innerHTML = `
+                        <div class="alert alert-info alert-sm" style="padding: 0.5rem; font-size: 0.9rem;">
+                            <i class="fas fa-check-circle"></i> Valid Google Drive URL detected
+                        </div>
+                    `;
+                } else {
+                    preview.innerHTML = `
+                        <div class="alert alert-warning alert-sm" style="padding: 0.5rem; font-size: 0.9rem;">
+                            <i class="fas fa-exclamation-triangle"></i> Not a valid Google Drive URL
+                        </div>
+                    `;
+                }
+            } else {
+                preview.innerHTML = '';
+            }
+        });
+        
+        // Date picker setup
+        flatpickr("#scheduleDatePicker", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            minDate: "today",
+            onChange: function(selectedDates) {
+                if (selectedDates.length > 0) {
+                    document.getElementById('scheduledTimeInput').value = selectedDates[0].toISOString();
+                }
+            }
+        });
+
+        // Form submission handler
+        document.getElementById('scheduleForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const submitBtn = document.getElementById('submitBtn');
+            const formMessage = document.getElementById('formMessage');
+            const scheduledTime = document.getElementById('scheduledTimeInput').value;
+            
+            // Add Google Drive URL if present
+            const mediaSource = document.querySelector('input[name="mediaSource"]:checked').value;
+            if (mediaSource === 'google') {
+                const googleUrl = document.getElementById('googleDriveUrl').value.trim();
+                if (googleUrl) {
+                    formData.append('google_drive_url', googleUrl);
+                }
+            }
+            
+            // Validate scheduled time
+            if (!scheduledTime) {
+                formMessage.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Please select a date and time</div>';
+                formMessage.style.display = 'block';
+                return;
+            }
+            
+            // Disable submit button
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scheduling...';
+            
+            try {
+                const response = await fetch('/schedule/create', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    formMessage.innerHTML = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Post scheduled successfully!</div>';
+                    formMessage.style.display = 'block';
+                    
+                    // Reset form
+                    this.reset();
+                    document.getElementById('mediaPreview').innerHTML = '';
+                    document.getElementById('googleDriveUrl').value = '';
+                    document.getElementById('googleDrivePreview').innerHTML = '';
+                    document.getElementById('scheduleDatePicker').value = '';
+                    document.getElementById('scheduledTimeInput').value = '';
+                    currentMedia = [];
+                    
+                    // Reload calendar after 2 seconds
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    formMessage.innerHTML = `<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> ${data.error || 'Error scheduling post'}</div>`;
+                    formMessage.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                formMessage.innerHTML = '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error scheduling post. Please try again.</div>';
+                formMessage.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Schedule Post';
+            }
+        });
+        
+        // Calendar setup
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            const events = [
+                {% for post in database_posts %}
+                    {
+                        title: 'App Post',
+                        start: '{{ post.scheduled_time.isoformat() }}',
+                        className: '{{ post.status }}'
+                    }{{ "," if not loop.last or sheet_posts else "" }}
+                {% endfor %}
+                {% for post in sheet_posts %}
+                    {
+                        title: 'Sheet Post',
+                        start: '{{ post.scheduled_time }}',
+                        className: '{{ post.status }}'
+                    }{{ "," if not loop.last else "" }}
+                {% endfor %}
+            ];
+            
+            const calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek'
+                },
+                events: events
+            });
+            calendar.render();
+        });;
+        
+        function cancelPost(postId) {
+            if (confirm('Are you sure you want to cancel this post? This action cannot be undone.')) {
+                fetch(`/schedule/${postId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Post cancelled successfully');
+                        location.reload();
+                    } else {
+                        return response.json().then(data => {
+                            alert('Error: ' + (data.error || 'Failed to cancel post'));
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error cancelling post. Please try again.');
+                });
+            }
+        }
+    </script>
+</body>
+</html>
