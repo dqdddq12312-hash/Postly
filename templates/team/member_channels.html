@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Channels - Postly Team{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 40px auto; padding: 20px;">
+    <div style="background: white; border-radius: 8px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <h1>Channel Access</h1>
+        <p style="color: #666; margin-bottom: 30px;">
+            Configure channel access for <strong>{{ member.user.username }}</strong> ({{ member.role|upper }})
+        </p>
+        
+        <form method="POST" action="{{ url_for('team_member_channels', team_id=team.id, member_id=member.id) }}">
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 30px;">
+                <h5>Access Levels:</h5>
+                <ul style="margin: 10px 0; padding-left: 20px; color: #666;">
+                    <li><strong>Full Posting:</strong> Can create and publish posts directly to this channel</li>
+                    <li><strong>Approval Required:</strong> Can create posts as drafts; needs approval from admin/owner before publishing</li>
+                    <li><strong>No Access:</strong> Cannot access or post to this channel</li>
+                </ul>
+            </div>
+            
+            {% if channels %}
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                        <th style="padding: 12px; text-align: left; font-weight: 600;">Channel</th>
+                        <th style="padding: 12px; text-align: left; font-weight: 600;">Access Level</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for channel in channels %}
+                    <tr style="border-bottom: 1px solid #dee2e6;">
+                        <td style="padding: 12px;">
+                            <strong>{{ channel.page_name }}</strong>
+                            <br>
+                            <small style="color: #666;">{{ channel.platform }}</small>
+                        </td>
+                        <td style="padding: 12px;">
+                            <select name="channel_{{ channel.id }}" class="form-control" 
+                                    style="width: 250px;">
+                                <option value="none" {% if current_access.get(channel.id) == 'none' or current_access.get(channel.id) is none %}selected{% endif %}>
+                                    ○ No Access
+                                </option>
+                                <option value="approval_required" {% if current_access.get(channel.id) == 'approval_required' %}selected{% endif %}>
+                                    ◑ Approval Required
+                                </option>
+                                <option value="full_posting" {% if current_access.get(channel.id) == 'full_posting' %}selected{% endif %}>
+                                    ● Full Posting
+                                </option>
+                            </select>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div style="background: #f8f9fa; padding: 40px; text-align: center; border-radius: 6px;">
+                <p style="color: #999; margin: 0;">No channels available. Add channels to your team first.</p>
+            </div>
+            {% endif %}
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary" {% if not channels %}disabled{% endif %}>
+                    <i class="fas fa-save"></i> Save Permissions
+                </button>
+                <a href="{{ url_for('team_dashboard') }}" class="btn btn-secondary">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

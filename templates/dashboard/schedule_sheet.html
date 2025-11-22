@@ -1,0 +1,1750 @@
+<!-- Google Sheets Style Post Scheduler -->
+<div id="scheduleSheetContainer" class="schedule-sheet-container" style="display: none;">
+    <div class="sheet-toolbar">
+        <div class="sheet-toolbar-left">
+            <button class="sheet-toolbar-btn" onclick="addRowToSheet()" title="Add new row">
+                <i class="fas fa-plus"></i> New Post
+            </button>
+            <button class="sheet-toolbar-btn" onclick="deleteSelectedRows()" title="Delete selected rows">
+                <i class="fas fa-trash"></i> Delete
+            </button>
+            <button class="sheet-toolbar-btn" onclick="duplicateSelectedRow()" title="Duplicate selected row">
+                <i class="fas fa-copy"></i> Duplicate
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="sheet-toolbar-btn" onclick="exportToCSV()" title="Export to CSV">
+                <i class="fas fa-download"></i> Export
+            </button>
+            <button class="sheet-toolbar-btn" onclick="triggerImportCSV()" title="Import from CSV">
+                <i class="fas fa-upload"></i> Import
+            </button>
+            <input type="file" id="csvImportInput" style="display: none;" accept=".csv" onchange="importFromCSV(event)">
+        </div>
+        <div class="sheet-toolbar-right">
+            <input type="text" id="sheetSearchInput" class="sheet-search" placeholder="Search posts..." onkeyup="filterSheetRows()">
+            <button class="sheet-toolbar-btn" onclick="saveAllChanges()" title="Save all changes">
+                <i class="fas fa-save"></i> Save All
+            </button>
+        </div>
+    </div>
+
+    <div class="sheet-table-wrapper">
+        <table id="postsSheetTable" class="posts-sheet-table">
+            <thead>
+                <tr class="sheet-header-row">
+                    <th class="sheet-col-checkbox"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>
+                    <th class="sheet-col-date">Date</th>
+                    <th class="sheet-col-time">Time</th>
+                    <th class="sheet-col-caption">Caption</th>
+                    <th class="sheet-col-pages">Pages</th>
+                    <th class="sheet-col-media">Media</th>
+                    <th class="sheet-col-status">Status</th>
+                    <th class="sheet-col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="sheetTableBody">
+                <!-- Rows will be added here dynamically -->
+            </tbody>
+        </table>
+    </div>
+
+    <div class="sheet-status-bar">
+        <span id="rowCountDisplay">0 posts</span>
+        <span id="selectedCountDisplay" style="display: none;">· <span id="selectedCount">0</span> selected</span>
+    </div>
+
+    <!-- Page Selector Modal -->
+    <div id="pageSelectorModal" class="page-selector-modal" style="display: none;">
+        <div class="page-selector-modal-content">
+            <div class="page-selector-modal-header">
+                <h3>Select Pages to Schedule</h3>
+                <button onclick="closePageSelector()" class="page-selector-close-btn">&times;</button>
+            </div>
+            <p class="page-selector-description">Choose which pages this post should be scheduled to (multiple selection allowed):</p>
+            <div id="pageSelectorList" class="page-selector-list">
+                <!-- Page checkboxes will be populated here -->
+            </div>
+            <div class="page-selector-actions">
+                <button onclick="closePageSelector()" class="page-selector-btn page-selector-btn-cancel">Cancel</button>
+                <button onclick="savePageSelection()" class="page-selector-btn page-selector-btn-save">Save Pages</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Media Modal (for scheduled posts) -->
+    <div id="viewMediaModal" class="row-detail-edit-modal" style="display: none;">
+        <div class="row-detail-edit-modal-content" style="max-width: 400px;">
+            <div class="row-detail-edit-modal-header">
+                <h3>Attached Media</h3>
+                <button onclick="closeViewMediaModal()" class="row-detail-edit-close-btn">&times;</button>
+            </div>
+            <div id="viewMediaList" style="padding: 16px; max-height: 300px; overflow-y: auto;">
+                <!-- Media items will be displayed here -->
+            </div>
+            <div class="row-detail-edit-actions">
+                <button onclick="closeViewMediaModal()" class="row-detail-edit-btn row-detail-edit-btn-save" style="flex: 1;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Row Detail Edit Modal -->
+    <div id="rowDetailEditModal" class="row-detail-edit-modal" style="display: none;">
+        <div class="row-detail-edit-modal-content">
+            <div class="row-detail-edit-modal-header">
+                <h3>Edit Post Details</h3>
+                <button onclick="closeRowEditModal()" class="row-detail-edit-close-btn">&times;</button>
+            </div>
+            <div class="row-detail-edit-form">
+                <div class="form-group">
+                    <label>Caption</label>
+                    <textarea id="editCaption" class="form-control" placeholder="Enter post caption..." style="min-height: 100px; resize: vertical;"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Date</label>
+                        <input type="date" id="editDate" class="form-control">
+                    </div>
+                    <div class="form-group" style="flex: 1; margin-left: 12px;">
+                        <label>Time</label>
+                        <input type="time" id="editTime" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editStatus" class="form-control">
+                        <option value="draft">Draft</option>
+                        <option value="scheduled">Scheduled</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Pages</label>
+                    <div id="editPageList" class="edit-page-list">
+                        <!-- Page checkboxes will be populated here -->
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Media</label>
+                    <div id="editMediaContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" onclick="editUploadMedia()" class="form-media-btn" title="Upload media file" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fas fa-cloud-upload-alt"></i> Upload
+                            </button>
+                            <button type="button" onclick="editAddGoogleDrive()" class="form-media-btn" title="Add Google Drive link" style="padding: 6px 12px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                                <i class="fab fa-google-drive"></i> Google Drive
+                            </button>
+                        </div>
+                        <div id="editMediaList" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px; background: #f9f9f9;">
+                            <!-- Media items will be displayed here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row-detail-edit-actions">
+                <button onclick="closeRowEditModal()" class="row-detail-edit-btn row-detail-edit-btn-cancel">Cancel</button>
+                <button onclick="saveRowEdit()" class="row-detail-edit-btn row-detail-edit-btn-save">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .schedule-sheet-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        background: #ffffff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        margin: 8px;
+    }
+
+    .sheet-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid #ede8e8;
+        background: #fafafa;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .sheet-toolbar-left,
+    .sheet-toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .sheet-toolbar-btn {
+        padding: 6px 12px;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        color: #050505;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+    }
+
+    .sheet-toolbar-btn:hover {
+        background: #f5f5f5;
+        border-color: #999;
+    }
+
+    .sheet-toolbar-btn:active {
+        background: #efefef;
+    }
+
+    .toolbar-divider {
+        width: 1px;
+        height: 20px;
+        background: #ede8e8;
+    }
+
+    .sheet-search {
+        padding: 6px 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 12px;
+        width: 180px;
+    }
+
+    .sheet-search:focus {
+        outline: none;
+        border-color: #1877f2;
+        box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.1);
+    }
+
+    .sheet-table-wrapper {
+        flex: 1;
+        overflow: auto;
+        position: relative;
+    }
+
+    .posts-sheet-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        font-size: 12px;
+    }
+
+    .sheet-header-row {
+        position: sticky;
+        top: 0;
+        background: #f5f5f5;
+        border-bottom: 2px solid #ede8e8;
+        z-index: 10;
+    }
+
+    .sheet-header-row th {
+        padding: 8px 12px;
+        text-align: left;
+        font-weight: 600;
+        color: #050505;
+        white-space: nowrap;
+        user-select: none;
+    }
+
+    .posts-sheet-table tbody tr {
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.15s;
+    }
+
+    .posts-sheet-table tbody tr:hover {
+        background: #f9f9f9;
+    }
+
+    .posts-sheet-table tbody tr.selected {
+        background: #e8f1ff;
+    }
+
+    .posts-sheet-table td {
+        padding: 8px 12px;
+        color: #050505;
+    }
+
+    .sheet-col-checkbox {
+        width: 40px;
+    }
+
+    .sheet-col-date {
+        width: 100px;
+    }
+
+    .sheet-col-time {
+        width: 80px;
+    }
+
+    .sheet-col-caption {
+        min-width: 250px;
+        max-width: 400px;
+    }
+
+    .sheet-col-pages {
+        width: 120px;
+    }
+
+    .sheet-col-media {
+        width: 80px;
+    }
+
+    .sheet-col-status {
+        width: 100px;
+    }
+
+    .sheet-col-actions {
+        width: 100px;
+    }
+
+    /* Cell Inputs */
+    .cell-input,
+    .cell-select,
+    .cell-textarea {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        font-size: 12px;
+        font-family: inherit;
+        background: transparent;
+        color: #050505;
+    }
+
+    .cell-input:focus,
+    .cell-select:focus,
+    .cell-textarea:focus {
+        outline: none;
+        background: white;
+        border-color: #1877f2;
+        box-shadow: inset 0 0 0 1px #1877f2;
+    }
+
+    .cell-input:disabled,
+    .cell-select:disabled,
+    .cell-textarea:disabled {
+        background: transparent;
+        border-color: transparent;
+        cursor: not-allowed;
+        color: #050505;
+    }
+
+    .cell-textarea {
+        resize: vertical;
+        min-height: 30px;
+        max-height: 100px;
+        padding: 6px 8px;
+    }
+
+    /* Cell Checkbox */
+    .cell-checkbox {
+        cursor: pointer;
+        width: 18px;
+        height: 18px;
+    }
+
+    /* Status Badge */
+    .sheet-status-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .sheet-status-badge.scheduled {
+        background: #fff5e6;
+        color: #cc8800;
+    }
+
+    .sheet-status-badge.draft {
+        background: #f5f5f5;
+        color: #666;
+    }
+
+    .sheet-status-badge.sent {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    /* Action Buttons */
+    .cell-action-btn {
+        padding: 4px 8px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 11px;
+        color: #050505;
+        transition: all 0.2s;
+        display: inline-block;
+        margin-right: 4px;
+    }
+
+    .cell-action-btn:hover {
+        background: #f5f5f5;
+        border-color: #999;
+    }
+
+    .cell-action-btn.danger {
+        border-color: #dc3545;
+        color: #dc3545;
+    }
+
+    .cell-action-btn.danger:hover {
+        background: rgba(220, 53, 69, 0.1);
+    }
+
+    /* Sheet Status Bar */
+    .sheet-status-bar {
+        padding: 8px 16px;
+        border-top: 1px solid #ede8e8;
+        background: #fafafa;
+        font-size: 11px;
+        color: #65676b;
+        display: flex;
+        gap: 16px;
+    }
+
+    /* Media Count Badge */
+    .media-count-badge {
+        background: #e8e8e8;
+        color: #050505;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 500;
+    }
+
+    /* Pages Pills */
+    .page-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .page-pill {
+        background: #f0f2f5;
+        border: 1px solid #ddd;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .page-pill-remove {
+        cursor: pointer;
+        color: #999;
+        font-weight: bold;
+        transition: color 0.2s;
+    }
+
+    .page-pill-remove:hover {
+        color: #050505;
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+        .sheet-col-caption {
+            min-width: 200px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .sheet-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .sheet-toolbar-left,
+        .sheet-toolbar-right {
+            width: 100%;
+        }
+
+        .posts-sheet-table {
+            font-size: 11px;
+        }
+
+        .posts-sheet-table td,
+        .posts-sheet-table th {
+            padding: 6px 8px;
+        }
+    }
+</style>
+
+<script>
+    let sheetData = [];
+    let selectedRows = new Set();
+    let currentUserPages = [];
+    let deletedRows = [];  // Track deleted rows with their IDs
+
+    // Initialize sheet data from existing posts
+    async function initializeSheetData() {
+        try {
+            const response = await fetch('/api/posts');
+            if (response.ok) {
+                const data = await response.json();
+                // Filter to only show draft and scheduled posts (exclude published/sent)
+                sheetData = data.posts
+                    .filter(post => post.status !== 'sent')
+                    .map(post => ({
+                    id: post.id,
+                    date: formatDateForSheet(post.scheduled_time || post.sent_time),
+                    time: formatTimeForSheet(post.scheduled_time || post.sent_time),
+                    caption: post.caption,
+                    pages: post.pages || [],
+                    media: post.media || [],
+                    status: post.status || 'draft',
+                    modified: false
+                }));
+                renderSheet();
+                updateRowCount();
+            }
+        } catch (error) {
+            console.error('Error loading posts:', error);
+        }
+    }
+
+    function formatDateForSheet(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toISOString().split('T')[0];
+    }
+
+    function formatTimeForSheet(dateString) {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+    }
+
+    function renderSheet() {
+        const tbody = document.getElementById('sheetTableBody');
+        tbody.innerHTML = '';
+
+        sheetData.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            tr.className = selectedRows.has(index) ? 'selected' : '';
+            tr.dataset.rowIndex = index;
+            
+            // Check if this is a new post (no ID) or existing post
+            const isNewPost = !row.id;
+
+            const captionPreview = row.caption.substring(0, 50) + (row.caption.length > 50 ? '...' : '');
+
+            tr.innerHTML = `
+                <td class="sheet-col-checkbox">
+                    <input type="checkbox" class="cell-checkbox" ${selectedRows.has(index) ? 'checked' : ''} 
+                           onchange="toggleRowSelection(${index}, this)">
+                </td>
+                <td class="sheet-col-date">
+                    <input type="date" class="cell-input" value="${row.date}" 
+                           ${isNewPost ? `onchange="updateCell(${index}, 'date', this.value)"` : 'disabled'}>
+                </td>
+                <td class="sheet-col-time">
+                    <input type="time" class="cell-input" value="${row.time}" 
+                           ${isNewPost ? `onchange="updateCell(${index}, 'time', this.value)"` : 'disabled'}>
+                </td>
+                <td class="sheet-col-caption">
+                    <textarea class="cell-textarea" placeholder="Post caption..." 
+                              ${isNewPost ? `onchange="updateCell(${index}, 'caption', this.value)"` : 'disabled'}
+                              title="${row.caption}">${row.caption}</textarea>
+                </td>
+                <td class="sheet-col-pages">
+                    <div class="page-pills">
+                        ${row.pages.map(page => `
+                            <div class="page-pill">
+                                <i class="${getPlatformIcon(page.platform)}"></i>
+                                <span>${page.name.substring(0, 12)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${isNewPost ? `<button class="cell-action-btn" onclick="openPageSelector(${index})">Edit Pages</button>` : ''}
+                </td>
+                <td class="sheet-col-media">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        ${row.media.length > 0 ? `<span class="media-count-badge">${row.media.length} files</span>` : '<span style="color: #999;">-</span>'}
+                        ${isNewPost ? `
+                            <div style="display: flex; gap: 4px;">
+                                <button class="media-action-btn" onclick="uploadMediaForRow(${index})" title="Upload file" style="padding: 4px 6px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; font-size: 11px;"><i class="fas fa-cloud-upload-alt"></i></button>
+                                <button class="media-action-btn" onclick="addGoogleDriveLink(${index})" title="Add Google Drive link" style="padding: 4px 6px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; font-size: 11px;"><i class="fab fa-google-drive"></i></button>
+                            </div>
+                        ` : `
+                            <button class="media-action-btn" onclick="viewRowMedia(${index})" title="View attached media" style="padding: 4px 6px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; font-size: 11px;"><i class="fas fa-images"></i></button>
+                        `}
+                    </div>
+                </td>
+                <td class="sheet-col-status">
+                    ${isNewPost ? `
+                        <select class="cell-select" onchange="updateCell(${index}, 'status', this.value)">
+                            <option value="draft" ${row.status === 'draft' ? 'selected' : ''}>Draft</option>
+                            <option value="scheduled" ${row.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+                        </select>
+                    ` : `
+                        <span style="padding: 4px 0; display: block;">${row.status.charAt(0).toUpperCase() + row.status.slice(1)}</span>
+                    `}
+                </td>
+                <td class="sheet-col-actions">
+                    ${!isNewPost ? `<button class="cell-action-btn" onclick="editRowDetails(${index})" title="Edit details">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>` : ''}
+                    <button class="cell-action-btn danger" onclick="deleteRow(${index})" title="Delete row">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    function updateCell(index, field, value) {
+        sheetData[index][field] = value;
+        sheetData[index].modified = true;
+    }
+
+    function toggleRowSelection(index, checkbox) {
+        if (checkbox.checked) {
+            selectedRows.add(index);
+        } else {
+            selectedRows.delete(index);
+        }
+        updateSelectAllCheckbox();
+        updateSelectedCount();
+        renderSheet();
+    }
+
+    function toggleSelectAll(checkbox) {
+        if (checkbox.checked) {
+            sheetData.forEach((_, index) => selectedRows.add(index));
+        } else {
+            selectedRows.clear();
+        }
+        updateSelectedCount();
+        renderSheet();
+    }
+
+    function updateSelectAllCheckbox() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        selectAllCheckbox.checked = selectedRows.size === sheetData.length && sheetData.length > 0;
+    }
+
+    function updateSelectedCount() {
+        const display = document.getElementById('selectedCountDisplay');
+        const count = document.getElementById('selectedCount');
+        if (selectedRows.size > 0) {
+            count.textContent = selectedRows.size;
+            display.style.display = 'inline';
+        } else {
+            display.style.display = 'none';
+        }
+    }
+
+    function updateRowCount() {
+        const display = document.getElementById('rowCountDisplay');
+        display.textContent = sheetData.length + (sheetData.length === 1 ? ' post' : ' posts');
+    }
+
+    function addRowToSheet() {
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+        sheetData.push({
+            id: null,
+            date: dateStr,
+            time: timeStr,
+            caption: '',
+            pages: [],
+            media: [],
+            status: 'draft',
+            modified: true
+        });
+
+        renderSheet();
+        updateRowCount();
+    }
+
+    function deleteRow(index) {
+        if (confirm('Delete this post?')) {
+            const row = sheetData[index];
+            
+            // Track deletion if row has an ID (existing post in database)
+            if (row.id) {
+                deletedRows.push(row.id);
+            }
+            
+            sheetData.splice(index, 1);
+            selectedRows.delete(index);
+            selectedRows = new Set([...selectedRows].map(i => i > index ? i - 1 : i));
+            renderSheet();
+            updateRowCount();
+        }
+    }
+
+    function deleteSelectedRows() {
+        if (selectedRows.size === 0) {
+            alert('Please select rows to delete');
+            return;
+        }
+
+        if (confirm(`Delete ${selectedRows.size} post(s)?`)) {
+            const indices = Array.from(selectedRows).sort((a, b) => b - a);
+            indices.forEach(index => {
+                const row = sheetData[index];
+                // Track deletion if row has an ID
+                if (row.id) {
+                    deletedRows.push(row.id);
+                }
+                sheetData.splice(index, 1);
+            });
+            selectedRows.clear();
+            renderSheet();
+            updateRowCount();
+        }
+    }
+
+    function duplicateSelectedRow() {
+        if (selectedRows.size === 0) {
+            alert('Please select a row to duplicate');
+            return;
+        }
+
+        if (selectedRows.size > 1) {
+            alert('Please select only one row to duplicate');
+            return;
+        }
+
+        const index = Array.from(selectedRows)[0];
+        const rowToDuplicate = sheetData[index];
+        
+        const newRow = {
+            id: null,
+            date: rowToDuplicate.date,
+            time: rowToDuplicate.time,
+            caption: rowToDuplicate.caption,
+            pages: [...rowToDuplicate.pages],
+            media: [...rowToDuplicate.media],
+            status: 'draft',
+            modified: true
+        };
+
+        sheetData.splice(index + 1, 0, newRow);
+        selectedRows.clear();
+        renderSheet();
+        updateRowCount();
+    }
+
+    function filterSheetRows() {
+        const searchInput = document.getElementById('sheetSearchInput').value.toLowerCase();
+        const rows = document.querySelectorAll('#sheetTableBody tr');
+
+        rows.forEach((row, index) => {
+            const caption = sheetData[index].caption.toLowerCase();
+            row.style.display = caption.includes(searchInput) ? '' : 'none';
+        });
+    }
+
+    async function saveAllChanges() {
+        const modifiedRows = sheetData.filter(row => row.modified || !row.id);
+
+        // Check if there are any changes (modifications, new rows, or deletions)
+        if (modifiedRows.length === 0 && deletedRows.length === 0) {
+            alert('No changes to save');
+            return;
+        }
+
+        // Validate all modified rows have pages selected
+        const rowsWithoutPages = modifiedRows.filter(row => !row.pages || row.pages.length === 0);
+        if (rowsWithoutPages.length > 0) {
+            alert(`${rowsWithoutPages.length} post(s) have no pages selected. Please select at least one page for each post.`);
+            return;
+        }
+
+        // Validate all rows have captions
+        const rowsWithoutCaption = modifiedRows.filter(row => !row.caption || row.caption.trim() === '');
+        if (rowsWithoutCaption.length > 0) {
+            alert(`${rowsWithoutCaption.length} post(s) have no caption. Please add a caption for each post.`);
+            return;
+        }
+
+        try {
+            const results = await Promise.all(modifiedRows.map(row => {
+                if (row.id) {
+                    return fetch(`/api/posts/${row.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            caption: row.caption,
+                            pages: row.pages,
+                            scheduled_time: row.date + ' ' + row.time,
+                            status: row.status
+                        }),
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                } else {
+                    return fetch('/api/posts', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            caption: row.caption,
+                            pages: row.pages,
+                            scheduled_time: row.date + ' ' + row.time,
+                            publish_type: row.status === 'sent' ? 'now' : 'scheduled'
+                        }),
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+            }));
+
+            // Handle deletions
+            const deleteResults = await Promise.all(deletedRows.map(postId =>
+                fetch(`/api/posts/${postId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+            ));
+
+            // Check for errors in responses
+            const failedRequests = [];
+            for (let i = 0; i < results.length; i++) {
+                if (!results[i].ok) {
+                    try {
+                        const errorData = await results[i].json();
+                        failedRequests.push({
+                            row: modifiedRows[i],
+                            status: results[i].status,
+                            error: errorData.error || 'Unknown error'
+                        });
+                    } catch (e) {
+                        failedRequests.push({
+                            row: modifiedRows[i],
+                            status: results[i].status,
+                            error: 'Could not parse error response'
+                        });
+                    }
+                }
+            }
+
+            // Check for delete errors
+            for (let i = 0; i < deleteResults.length; i++) {
+                if (!deleteResults[i].ok) {
+                    try {
+                        const errorData = await deleteResults[i].json();
+                        failedRequests.push({
+                            action: 'delete',
+                            postId: deletedRows[i],
+                            status: deleteResults[i].status,
+                            error: errorData.error || 'Unknown error'
+                        });
+                    } catch (e) {
+                        failedRequests.push({
+                            action: 'delete',
+                            postId: deletedRows[i],
+                            status: deleteResults[i].status,
+                            error: 'Could not parse error response'
+                        });
+                    }
+                }
+            }
+
+            if (failedRequests.length > 0) {
+                const errorMessages = failedRequests.map(f => {
+                    if (f.action === 'delete') {
+                        return `Delete post ${f.postId}: ${f.error}`;
+                    } else {
+                        return `Post "${f.row.caption.substring(0, 30)}...": ${f.error}`;
+                    }
+                }).join('\n');
+                alert(`Failed to save some posts:\n\n${errorMessages}`);
+                console.error('Failed requests:', failedRequests);
+            } else {
+                // Clear modified flags and deleted rows list
+                sheetData.forEach(row => row.modified = false);
+                deletedRows = [];
+                
+                const totalChanges = modifiedRows.length + deleteResults.length;
+                alert(`Successfully saved ${totalChanges} change(s)!`);
+                
+                // Trigger calendar refresh if available
+                if (window.loadPostsOnCalendar) {
+                    loadPostsOnCalendar();
+                }
+            }
+        } catch (error) {
+            console.error('Error saving posts:', error);
+            alert('Error saving posts: ' + error.message);
+        }
+    }
+
+    function exportToCSV() {
+        const csv = [];
+        const headers = ['Date', 'Time', 'Caption', 'Pages', 'Status'];
+        csv.push(headers.join(','));
+
+        sheetData.forEach(row => {
+            const pageNames = row.pages.map(p => p.name).join('; ');
+            const cells = [
+                row.date,
+                row.time,
+                '"' + row.caption.replace(/"/g, '""') + '"',
+                pageNames,
+                row.status
+            ];
+            csv.push(cells.join(','));
+        });
+
+        const csvContent = csv.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `posts_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    }
+
+    function triggerImportCSV() {
+        document.getElementById('csvImportInput').click();
+    }
+
+    function importFromCSV(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const csv = e.target.result;
+            const lines = csv.split('\n');
+            
+            // Skip header row
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                // Simple CSV parsing (doesn't handle quoted commas perfectly, but good for basic use)
+                const cells = line.split(',');
+                if (cells.length >= 2) {
+                    sheetData.push({
+                        id: null,
+                        date: cells[0].trim(),
+                        time: cells[1].trim(),
+                        caption: cells[2] ? cells[2].trim().replace(/^"/, '').replace(/"$/, '') : '',
+                        pages: [],
+                        media: [],
+                        status: cells[4] ? cells[4].trim() : 'draft',
+                        modified: true
+                    });
+                }
+            }
+
+            renderSheet();
+            updateRowCount();
+            alert(`Imported ${sheetData.length} posts from CSV`);
+        };
+
+        reader.readAsText(file);
+    }
+
+    // Platform icon helper
+    function getPlatformIcon(platform) {
+        const icons = {
+            'facebook': 'fab fa-facebook',
+            'instagram': 'fab fa-instagram',
+            'tiktok': 'fab fa-tiktok',
+            'twitter': 'fab fa-twitter',
+            'linkedin': 'fab fa-linkedin'
+        };
+        return icons[platform?.toLowerCase()] || 'fas fa-share-alt';
+    }
+
+    // Load available pages from sidebar
+    function loadAvailablePagesFromSidebar() {
+        try {
+            const pageItems = document.querySelectorAll('.page-item');
+            window.availablePages = [];
+            
+            pageItems.forEach(item => {
+                const pageName = item.querySelector('.page-item-name')?.textContent || '';
+                const platformId = item.querySelector('.page-item-platform')?.textContent || '';
+                const onclickAttr = item.getAttribute('onclick') || '';
+                const pageId = parseInt(onclickAttr.match(/\d+/)?.[0] || '0');
+                
+                if (pageId > 0) {
+                    const iconClass = item.querySelector('i')?.className || '';
+                    let platform = 'facebook';
+                    if (iconClass.includes('instagram')) platform = 'instagram';
+                    else if (iconClass.includes('tiktok')) platform = 'tiktok';
+                    else if (iconClass.includes('twitter')) platform = 'twitter';
+                    else if (iconClass.includes('linkedin')) platform = 'linkedin';
+                    
+                    window.availablePages.push({
+                        id: pageId,
+                        name: pageName,
+                        platform: platform,
+                        platform_page_id: platformId
+                    });
+                }
+            });
+            console.log('Available pages loaded:', window.availablePages);
+        } catch (error) {
+            console.error('Error loading pages from sidebar:', error);
+        }
+    }
+
+    // Open page selector modal
+    function openPageSelector(index) {
+        const modal = document.getElementById('pageSelectorModal');
+        if (!modal) {
+            console.error('Page selector modal not found');
+            return;
+        }
+        
+        modal.dataset.rowIndex = index;
+        const currentPages = sheetData[index].pages || [];
+        const currentPageIds = currentPages.map(p => p.id);
+        
+        const pageList = document.getElementById('pageSelectorList');
+        pageList.innerHTML = (window.availablePages || []).map(page => `
+            <label class="page-checkbox-label">
+                <input type="checkbox" 
+                       class="page-checkbox" 
+                       data-page-id="${page.id}" 
+                       ${currentPageIds.includes(page.id) ? 'checked' : ''}>
+                <i class="${getPlatformIcon(page.platform)}" style="margin-right: 6px;"></i>
+                <span>${page.name}</span>
+            </label>
+        `).join('');
+        
+        modal.style.display = 'flex';
+    }
+
+    // Save page selection
+    function savePageSelection() {
+        const modal = document.getElementById('pageSelectorModal');
+        const rowIndex = parseInt(modal.dataset.rowIndex);
+        
+        const checkedCheckboxes = document.querySelectorAll('#pageSelectorList .page-checkbox:checked');
+        const selectedPages = [];
+        
+        checkedCheckboxes.forEach(checkbox => {
+            const pageId = parseInt(checkbox.dataset.pageId);
+            const pageData = window.availablePages.find(p => p.id === pageId);
+            if (pageData) selectedPages.push(pageData);
+        });
+        
+        if (selectedPages.length === 0) {
+            alert('Please select at least one page');
+            return;
+        }
+        
+        sheetData[rowIndex].pages = selectedPages;
+        sheetData[rowIndex].modified = true;
+        renderSheet();
+        closePageSelector();
+    }
+
+    // Close page selector modal
+    function closePageSelector() {
+        const modal = document.getElementById('pageSelectorModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    function editRowDetails(index) {
+        const row = sheetData[index];
+        const modal = document.getElementById('rowDetailEditModal');
+        
+        if (!modal) {
+            console.error('Row detail edit modal not found');
+            return;
+        }
+        
+        // Store current row index
+        modal.dataset.rowIndex = index;
+        
+        // Populate modal fields
+        document.getElementById('editCaption').value = row.caption;
+        document.getElementById('editDate').value = row.date;
+        document.getElementById('editTime').value = row.time;
+        document.getElementById('editStatus').value = row.status;
+        
+        // Render page selection in modal
+        const pageList = document.getElementById('editPageList');
+        const currentPageIds = row.pages.map(p => p.id);
+        pageList.innerHTML = (window.availablePages || []).map(page => `
+            <label class="edit-page-checkbox-label">
+                <input type="checkbox" 
+                       class="edit-page-checkbox" 
+                       data-page-id="${page.id}" 
+                       ${currentPageIds.includes(page.id) ? 'checked' : ''}>
+                <i class="${getPlatformIcon(page.platform)}" style="margin-right: 6px;"></i>
+                <span>${page.name}</span>
+            </label>
+        `).join('');
+        
+        // Update media preview
+        updateEditMediaPreview();
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        console.log(`Editing post ${index}: "${row.caption.substring(0, 30)}..."`);
+    }
+
+    // Save row edits
+    function saveRowEdit() {
+        const modal = document.getElementById('rowDetailEditModal');
+        const rowIndex = parseInt(modal.dataset.rowIndex);
+        const row = sheetData[rowIndex];
+        
+        // Get updated values
+        const caption = document.getElementById('editCaption').value.trim();
+        const date = document.getElementById('editDate').value;
+        const time = document.getElementById('editTime').value;
+        const status = document.getElementById('editStatus').value;
+        
+        // Validate
+        if (!caption) {
+            alert('Caption cannot be empty');
+            return;
+        }
+        
+        if (!date || !time) {
+            alert('Please set a date and time');
+            return;
+        }
+        
+        // Get selected pages
+        const checkedCheckboxes = document.querySelectorAll('#editPageList .edit-page-checkbox:checked');
+        const selectedPages = [];
+        
+        checkedCheckboxes.forEach(checkbox => {
+            const pageId = parseInt(checkbox.dataset.pageId);
+            const pageData = window.availablePages.find(p => p.id === pageId);
+            if (pageData) selectedPages.push(pageData);
+        });
+        
+        if (selectedPages.length === 0) {
+            alert('Please select at least one page');
+            return;
+        }
+        
+        // Update sheet data
+        row.caption = caption;
+        row.date = date;
+        row.time = time;
+        row.status = status;
+        row.pages = selectedPages;
+        row.modified = true;
+        
+        // Re-render sheet
+        renderSheet();
+        
+        // Close modal
+        closeRowEditModal();
+        
+        console.log(`Updated post ${rowIndex}: "${caption.substring(0, 30)}..."`);
+    }
+
+    // Close row edit modal
+    function closeRowEditModal() {
+        const modal = document.getElementById('rowDetailEditModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    // Media upload handler for edit modal
+    function editUploadMedia() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = 'image/*,video/*';
+        input.onchange = function(e) {
+            const files = Array.from(e.target.files);
+            const modal = document.getElementById('rowDetailEditModal');
+            const rowIndex = parseInt(modal.dataset.rowIndex);
+            
+            if (!sheetData[rowIndex].media) {
+                sheetData[rowIndex].media = [];
+            }
+            
+            files.forEach(file => {
+                sheetData[rowIndex].media.push({
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    file: file
+                });
+            });
+            
+            sheetData[rowIndex].modified = true;
+            updateEditMediaPreview();
+            console.log(`Added ${files.length} media files to edit`);
+        };
+        input.click();
+    }
+
+    // Add Google Drive link to edit modal
+    function editAddGoogleDrive() {
+        const driveLink = prompt('Enter Google Drive link or file ID:', '');
+        if (!driveLink) return;
+        
+        let fullLink = driveLink;
+        if (!driveLink.includes('/')) {
+            fullLink = `https://drive.google.com/uc?id=${driveLink}&export=download`;
+        }
+        
+        const modal = document.getElementById('rowDetailEditModal');
+        const rowIndex = parseInt(modal.dataset.rowIndex);
+        
+        if (!sheetData[rowIndex].media) {
+            sheetData[rowIndex].media = [];
+        }
+        
+        sheetData[rowIndex].media.push({
+            name: 'Google Drive',
+            url: fullLink,
+            type: 'google_drive'
+        });
+        
+        sheetData[rowIndex].modified = true;
+        updateEditMediaPreview();
+        console.log(`Added Google Drive link to edit: ${fullLink}`);
+    }
+
+    // Update media preview in edit modal
+    function updateEditMediaPreview() {
+        const modal = document.getElementById('rowDetailEditModal');
+        const rowIndex = parseInt(modal.dataset.rowIndex);
+        const row = sheetData[rowIndex];
+        const mediaList = document.getElementById('editMediaList');
+        
+        if (!row.media || row.media.length === 0) {
+            mediaList.innerHTML = '<div style="color: #999; font-size: 12px; padding: 8px; text-align: center;">No media added yet</div>';
+        } else {
+            mediaList.innerHTML = row.media.map((media, mediaIndex) => {
+                let icon = 'fas fa-file';
+                let displayName = media.name || 'Unknown media';
+                let sizeStr = '';
+                
+                // Determine icon and display name
+                if (media.type === 'google_drive' || media.type === 'url') {
+                    icon = 'fab fa-google-drive';
+                    displayName = 'Google Drive Link';
+                } else if (media.type && media.type.startsWith('image/')) {
+                    icon = 'fas fa-image';
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                } else if (media.type && media.type.startsWith('video/')) {
+                    icon = 'fas fa-video';
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                } else if (typeof media === 'object' && media.name) {
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                }
+                
+                return `
+                    <div class="media-list-item">
+                        <div class="media-item-info">
+                            <div class="media-item-icon"><i class="${icon}"></i></div>
+                            <div class="media-item-name" title="${displayName}">${displayName}</div>
+                            ${sizeStr ? `<div class="media-item-size">${sizeStr}</div>` : ''}
+                        </div>
+                        <button class="media-item-remove" onclick="removeEditMedia(${mediaIndex})" title="Remove this media">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    function formatFileSize(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + ' ' + sizes[i];
+    }
+
+    function removeEditMedia(mediaIndex) {
+        const modal = document.getElementById('rowDetailEditModal');
+        const rowIndex = parseInt(modal.dataset.rowIndex);
+        const row = sheetData[rowIndex];
+        
+        if (confirm('Remove this media?')) {
+            row.media.splice(mediaIndex, 1);
+            row.modified = true;
+            updateEditMediaPreview();
+        }
+    }
+
+    // View media for scheduled posts (read-only)
+    function viewRowMedia(index) {
+        const row = sheetData[index];
+        const modal = document.getElementById('viewMediaModal');
+        const mediaList = document.getElementById('viewMediaList');
+        
+        if (!row.media || row.media.length === 0) {
+            mediaList.innerHTML = '<div style="color: #999; font-size: 12px; padding: 8px; text-align: center;">No media attached</div>';
+        } else {
+            mediaList.innerHTML = row.media.map((media) => {
+                let icon = 'fas fa-file';
+                let displayName = media.name || 'Unknown media';
+                let sizeStr = '';
+                
+                // Determine icon and display name
+                if (media.type === 'google_drive' || media.type === 'url') {
+                    icon = 'fab fa-google-drive';
+                    displayName = 'Google Drive Link';
+                } else if (media.type && media.type.startsWith('image/')) {
+                    icon = 'fas fa-image';
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                } else if (media.type && media.type.startsWith('video/')) {
+                    icon = 'fas fa-video';
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                } else if (typeof media === 'object' && media.name) {
+                    sizeStr = media.size ? ` (${formatFileSize(media.size)})` : '';
+                }
+                
+                return `
+                    <div class="media-list-item" style="cursor: default;">
+                        <div class="media-item-info">
+                            <div class="media-item-icon"><i class="${icon}"></i></div>
+                            <div class="media-item-name" title="${displayName}">${displayName}</div>
+                            ${sizeStr ? `<div class="media-item-size">${sizeStr}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        modal.style.display = 'flex';
+    }
+
+    function closeViewMediaModal() {
+        const modal = document.getElementById('viewMediaModal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    // Initialize when sheet container is shown
+    function initializeSheetTab() {
+        if (sheetData.length === 0) {
+            initializeSheetData();
+        }
+        // Load available pages from sidebar
+        loadAvailablePagesFromSidebar();
+    }
+
+    // Media upload handler for a specific row
+    function uploadMediaForRow(index) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = 'image/*,video/*';
+        input.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            // Store files temporarily (will be sent when saving post)
+            if (!sheetData[index].mediaFiles) {
+                sheetData[index].mediaFiles = [];
+            }
+            
+            files.forEach(file => {
+                sheetData[index].mediaFiles.push(file);
+            });
+            
+            // Update media count
+            sheetData[index].media.push(...files.map(f => ({
+                name: f.name,
+                type: f.type,
+                size: f.size
+            })));
+            
+            sheetData[index].modified = true;
+            renderSheet();
+            
+            console.log(`Added ${files.length} files to post ${index}`);
+        };
+        input.click();
+    }
+
+    // Add Google Drive link to a row
+    function addGoogleDriveLink(index) {
+        const driveLink = prompt('Enter Google Drive link (or file ID):', '');
+        if (!driveLink) return;
+        
+        // Convert file ID to link if only ID provided
+        let fullLink = driveLink;
+        if (!driveLink.includes('/')) {
+            fullLink = `https://drive.google.com/uc?id=${driveLink}&export=download`;
+        }
+        
+        if (!sheetData[index].media) {
+            sheetData[index].media = [];
+        }
+        
+        sheetData[index].media.push({
+            name: 'Google Drive',
+            url: fullLink,
+            type: 'google_drive'
+        });
+        
+        sheetData[index].modified = true;
+        renderSheet();
+        
+        console.log(`Added Google Drive link to post ${index}: ${fullLink}`);
+    }
+</script>
+
+<style>
+    /* Page Selector Modal Styles */
+    .page-selector-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .page-selector-modal-content {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        min-width: 400px;
+        max-width: 500px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .page-selector-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .page-selector-modal-header h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #050505;
+    }
+
+    .page-selector-close-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #999;
+        padding: 0;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s;
+    }
+
+    .page-selector-close-btn:hover {
+        color: #050505;
+    }
+
+    .page-selector-description {
+        margin: 0 0 16px 0;
+        font-size: 12px;
+        color: #65676b;
+    }
+
+    .page-selector-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    .page-checkbox-label {
+        display: flex;
+        align-items: center;
+        padding: 10px 12px;
+        background: #f9f9f9;
+        border: 1px solid #ede8e8;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 13px;
+        color: #050505;
+    }
+
+    .page-checkbox-label:hover {
+        background: #f0f0f0;
+        border-color: #ddd;
+    }
+
+    .page-checkbox-label input[type="checkbox"] {
+        margin-right: 8px;
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+    }
+
+    .page-selector-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .page-selector-btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        border: none;
+        transition: all 0.2s;
+    }
+
+    .page-selector-btn-cancel {
+        background: #f0f0f0;
+        border: 1px solid #ddd;
+        color: #050505;
+    }
+
+    .page-selector-btn-cancel:hover {
+        background: #e8e8e8;
+    }
+
+    .page-selector-btn-save {
+        background: #1877f2;
+        color: white;
+    }
+
+    .page-selector-btn-save:hover {
+        background: #0a66c2;
+    }
+
+    /* Row Detail Edit Modal Styles */
+    .row-detail-edit-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .row-detail-edit-modal-content {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        width: 90%;
+        max-width: 500px;
+        max-height: 85vh;
+        overflow-y: auto;
+    }
+
+    .row-detail-edit-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .row-detail-edit-modal-header h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .row-detail-edit-close-btn {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #999;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .row-detail-edit-close-btn:hover {
+        color: #333;
+        background: #f0f0f0;
+        border-radius: 4px;
+    }
+
+    .row-detail-edit-form {
+        padding: 16px;
+    }
+
+    .form-group {
+        margin-bottom: 16px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 500;
+        color: #333;
+        font-size: 13px;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #0a66c2;
+        box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.1);
+    }
+
+    .form-row {
+        display: flex;
+        gap: 12px;
+    }
+
+    .edit-page-list {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        max-height: 150px;
+        overflow-y: auto;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        padding: 8px;
+        background: #f9f9f9;
+    }
+
+    .edit-page-list label {
+        display: flex;
+        align-items: center;
+        margin: 0;
+        font-weight: normal;
+        cursor: pointer;
+        padding: 4px 0;
+    }
+
+    .edit-page-list input[type="checkbox"] {
+        margin-right: 8px;
+        cursor: pointer;
+    }
+
+    .row-detail-edit-actions {
+        display: flex;
+        gap: 12px;
+        padding: 12px 16px;
+        border-top: 1px solid #e0e0e0;
+        background: #f9f9f9;
+    }
+
+    .row-detail-edit-btn {
+        flex: 1;
+        padding: 10px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .row-detail-edit-btn-cancel {
+        background: #e0e0e0;
+        color: #333;
+    }
+
+    .row-detail-edit-btn-cancel:hover {
+        background: #d0d0d0;
+    }
+
+    .row-detail-edit-btn-save {
+        background: #0a66c2;
+        color: white;
+    }
+
+    .row-detail-edit-btn-save:hover {
+        background: #0856a0;
+    }
+
+    /* Media List Item Styles */
+    .media-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 10px;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+
+    .media-item-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .media-item-icon {
+        font-size: 14px;
+        color: #1877f2;
+        flex-shrink: 0;
+    }
+
+    .media-item-name {
+        color: #050505;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+    }
+
+    .media-item-size {
+        color: #999;
+        font-size: 11px;
+        margin-left: 8px;
+        flex-shrink: 0;
+    }
+
+    .media-item-remove {
+        background: none;
+        border: none;
+        color: #dc3545;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 4px 6px;
+        transition: color 0.2s;
+        margin-left: 6px;
+    }
+
+    .media-item-remove:hover {
+        color: #c82333;
+    }
+
+</style>

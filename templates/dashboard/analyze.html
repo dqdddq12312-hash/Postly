@@ -1,0 +1,1827 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze - Postly Analytics Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .analyze-container {
+        display: flex;
+        height: calc(100vh - 80px);
+        background-color: #f8f9fa;
+    }
+
+    .analyze-sidebar {
+        width: 280px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
+        border-right: 1px solid #e8ebed;
+        overflow-y: auto;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(24, 119, 242, 0.08);
+    }
+
+    .sidebar-section {
+        margin-bottom: 30px;
+    }
+
+    .sidebar-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #1877f2;
+        margin-bottom: 15px;
+        letter-spacing: 0.5px;
+    }
+
+    .channel-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .channel-item {
+        margin-bottom: 10px;
+    }
+
+    .channel-btn {
+        width: 100%;
+        padding: 12px 14px;
+        border: 2px solid #e8ebed;
+        background-color: white;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: left;
+        color: #2c3e50;
+        font-weight: 500;
+    }
+
+    .channel-btn:hover {
+        background-color: #f0f7ff;
+        border-color: #1877f2;
+        transform: translateX(2px);
+    }
+
+    .channel-btn.active {
+        background: linear-gradient(135deg, #f0f7ff 0%, #e3f2fd 100%);
+        border-color: #1877f2;
+        color: #1877f2;
+        font-weight: 600;
+    }
+
+    .channel-icon {
+        margin-right: 8px;
+        font-size: 16px;
+    }
+
+    .analyze-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .analyze-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        background-color: white;
+        border-bottom: 1px solid #e5e7eb;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .analyze-header h2 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        color: #050505;
+    }
+
+    .page-selector {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .page-dropdown {
+        padding: 10px 14px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        background-color: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        color: #050505;
+        min-width: 250px;
+    }
+
+    .page-dropdown:hover {
+        border-color: #1877f2;
+        background-color: #f0f7ff;
+    }
+
+    .refresh-analytics-btn {
+        padding: 10px 16px;
+        background-color: #1877f2;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        white-space: nowrap;
+    }
+
+    .refresh-analytics-btn:hover {
+        background-color: #0a66c2;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(24, 119, 242, 0.3);
+    }
+
+    .refresh-analytics-btn:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    #refreshIcon.spinning {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .analyze-tabs {
+        display: flex;
+        padding: 0 24px;
+        border-bottom: 1px solid #e5e7eb;
+        background-color: white;
+    }
+
+    .tab-button {
+        padding: 16px 24px;
+        background: none;
+        border: none;
+        border-bottom: 3px solid transparent;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        color: #65676b;
+        transition: all 0.2s;
+    }
+
+    .tab-button:hover {
+        color: #1877f2;
+    }
+
+    .tab-button.active {
+        color: #1877f2;
+        border-bottom-color: #1877f2;
+    }
+
+    .analyze-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 24px;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    /* Overview Tab Styles */
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .metric-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #65676b;
+        margin-bottom: 8px;
+        letter-spacing: 0.3px;
+    }
+
+    .metric-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1877f2;
+        margin-bottom: 8px;
+    }
+
+    .metric-change {
+        font-size: 12px;
+        color: #65676b;
+    }
+
+    .metric-change.positive {
+        color: #31a24c;
+    }
+
+    .metric-change.negative {
+        color: #f02849;
+    }
+
+    .chart-container {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .chart-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #050505;
+        margin-bottom: 16px;
+    }
+
+    /* Post Details Tab Styles */
+    .post-details-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+        padding: 20px 0;
+    }
+
+    .post-details-card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+        transition: all 0.3s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+    }
+
+    .post-details-card:hover {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        transform: translateY(-4px);
+        border-color: #1877f2;
+    }
+
+    .post-card-media {
+        width: 100%;
+        height: 200px;
+        background: #f0f2f5;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .post-card-media img,
+    .post-card-media video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .post-card-content {
+        padding: 16px;
+    }
+
+    .post-card-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #050505;
+        margin-bottom: 6px;
+        line-height: 1.4;
+        max-height: 42px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .post-card-date {
+        font-size: 12px;
+        color: #65676b;
+        margin-bottom: 12px;
+    }
+
+    .post-card-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 14px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .post-metric-item {
+        text-align: center;
+    }
+
+    .post-metric-label {
+        display: block;
+        font-size: 11px;
+        color: #65676b;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .post-metric-value {
+        display: block;
+        font-size: 18px;
+        font-weight: 700;
+        color: #1877f2;
+    }
+
+    .view-detail-btn {
+        width: 100%;
+        padding: 10px;
+        background: linear-gradient(135deg, #1877f2 0%, #0a66c2 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .view-detail-btn:hover {
+        background: linear-gradient(135deg, #0a66c2 0%, #053fa3 100%);
+        transform: scale(1.02);
+    }
+
+    .post-item {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid #e5e7eb;
+        margin-bottom: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: grid;
+        grid-template-columns: 120px 1fr 200px;
+        gap: 16px;
+        align-items: start;
+    }
+
+    .post-item:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border-color: #1877f2;
+    }
+
+    .post-media-preview {
+        width: 120px;
+        height: 120px;
+        border-radius: 8px;
+        background-color: #f0f2f5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        font-size: 40px;
+        color: #ccc;
+        position: relative;
+    }
+
+    .post-media-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .post-media-preview video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .media-type-badge {
+        position: absolute;
+        bottom: 4px;
+        right: 4px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+    }
+
+    .post-content {
+        flex: 1;
+    }
+
+    .post-caption {
+        font-size: 14px;
+        color: #050505;
+        margin-bottom: 8px;
+        max-height: 40px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .post-meta {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        font-size: 12px;
+        color: #65676b;
+        flex-wrap: wrap;
+    }
+
+    .post-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+
+    .stat-item {
+        padding: 8px;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        text-align: center;
+    }
+
+    .stat-label {
+        font-size: 10px;
+        color: #65676b;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
+
+    .stat-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1877f2;
+    }
+
+    .post-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .view-detail-btn {
+        padding: 10px 14px;
+        background-color: #1877f2;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+        transition: all 0.2s;
+        text-align: center;
+    }
+
+    .view-detail-btn:hover {
+        background-color: #165ec7;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(24, 119, 242, 0.3);
+    }
+
+    /* No Data State */
+    .no-data-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 400px;
+        color: #65676b;
+    }
+
+    .no-data-icon {
+        font-size: 64px;
+        color: #ccc;
+        margin-bottom: 16px;
+    }
+
+    .no-data-text {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .no-data-subtext {
+        font-size: 14px;
+        color: #999;
+    }
+
+    /* Detail Modal */
+    .post-detail-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.2s ease;
+    }
+
+    .post-detail-modal.active {
+        display: flex;
+    }
+
+    .post-detail-modal-content {
+        background: white;
+        border-radius: 12px;
+        max-width: 700px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        animation: slideUp 0.3s ease;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16);
+    }
+
+    .post-detail-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #e5e7eb;
+        background-color: #fafbfc;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .post-detail-header-info h3 {
+        margin: 0 0 4px 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #050505;
+    }
+
+    .post-detail-header-info p {
+        margin: 0;
+        font-size: 12px;
+        color: #65676b;
+    }
+
+    .post-detail-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        color: #65676b;
+        cursor: pointer;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s;
+    }
+
+    .post-detail-close:hover {
+        background-color: #e4e6eb;
+    }
+
+    .post-detail-body {
+        padding: 24px;
+    }
+
+    .detail-section {
+        margin-bottom: 24px;
+    }
+
+    .detail-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .detail-section h4 {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #65676b;
+        margin-bottom: 12px;
+        letter-spacing: 0.3px;
+    }
+
+    .metrics-grid-detailed {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    .metric-item-detailed {
+        padding: 16px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%);
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        transition: all 0.2s;
+    }
+
+    .metric-item-detailed:hover {
+        background: linear-gradient(135deg, #f0f2f5 0%, #e8ebed 100%);
+        border-color: #1877f2;
+        box-shadow: 0 2px 8px rgba(24, 119, 242, 0.12);
+    }
+
+    .metric-label-detailed {
+        font-size: 12px;
+        font-weight: 600;
+        color: #65676b;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+        display: block;
+        letter-spacing: 0.3px;
+    }
+
+    .metric-value-detailed {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1877f2;
+        margin-bottom: 8px;
+        display: block;
+    }
+
+    .metric-formula-detailed {
+        font-size: 11px;
+        color: #8a8d91;
+        font-style: italic;
+        line-height: 1.4;
+        display: block;
+    }
+
+    .detail-media-carousel {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+    }
+
+    .carousel-item {
+        flex-shrink: 0;
+        width: 150px;
+        height: 150px;
+        border-radius: 8px;
+        background-color: #f0f2f5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+    }
+
+    .carousel-item:hover {
+        border-color: #1877f2;
+    }
+
+    .carousel-item img,
+    .carousel-item video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .detail-content {
+        background-color: #f8f9fa;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+
+    .detail-caption {
+        font-size: 14px;
+        color: #050505;
+        line-height: 1.6;
+        word-break: break-word;
+    }
+
+    .insight-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .insight-metric {
+        background-color: #f8f9fa;
+        padding: 16px;
+        border-radius: 8px;
+        border-left: 3px solid #1877f2;
+    }
+
+    .insight-metric-label {
+        font-size: 11px;
+        color: #65676b;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 6px;
+        letter-spacing: 0.2px;
+    }
+
+    .insight-metric-value {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1877f2;
+    }
+
+    .engagement-breakdown {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+
+    .breakdown-item {
+        text-align: center;
+        padding: 12px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .breakdown-label {
+        font-size: 11px;
+        color: #65676b;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+
+    .breakdown-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #1877f2;
+    }
+
+    .page-badge {
+        display: inline-block;
+        background-color: #e4e6eb;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #050505;
+        margin-right: 8px;
+        margin-bottom: 8px;
+    }
+
+    .page-badge.facebook {
+        background-color: #e7f3ff;
+        color: #1877f2;
+    }
+
+    .page-badge.instagram {
+        background: linear-gradient(45deg, #f77737 0%, #fda348 25%, #feda75 50%, #5b73d7 100%);
+        color: white;
+        background-size: 300% 300%;
+    }
+
+    .page-badge.tiktok {
+        background-color: #000;
+        color: white;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .platform-icon {
+        width: 20px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analyze-container">
+    <!-- Sidebar: Channel Selector -->
+    <div class="analyze-sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">Channels</div>
+            <ul class="channel-list">
+                {% if pages_by_platform %}
+                    {% for platform, pages in pages_by_platform.items() %}
+                        {% if pages %}
+                        <li class="channel-item">
+                            <button class="channel-btn" data-platform="{{ platform }}" onclick="selectChannel('{{ platform }}', this)">
+                                <span class="channel-icon">
+                                    {% if platform == 'facebook' %}
+                                        <i class="fab fa-facebook" style="color: #1877f2;"></i>
+                                    {% elif platform == 'instagram' %}
+                                        <i class="fab fa-instagram"></i>
+                                    {% elif platform == 'tiktok' %}
+                                        <i class="fab fa-tiktok"></i>
+                                    {% endif %}
+                                </span>
+                                {{ platform.capitalize() }}
+                            </button>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="analyze-content">
+        <!-- Header with Channel Name and Page Selector -->
+        <div class="analyze-header">
+            <h2 id="channelTitle">Select a Channel</h2>
+            <div class="page-selector" id="pageSelectorContainer" style="display: none;">
+                <select class="page-dropdown" id="pageSelector" onchange="selectPage()">
+                    <option value="">All Pages</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="analyze-tabs">
+            <button class="tab-button active" data-tab="overview" onclick="switchTab('overview')">
+                <i class="fas fa-chart-bar" style="margin-right: 8px;"></i>Overview
+            </button>
+            <button class="tab-button" data-tab="post-details" onclick="switchTab('post-details')">
+                <i class="fas fa-list" style="margin-right: 8px;"></i>Post Details
+            </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="analyze-body">
+            <!-- Overview Tab -->
+            <div class="tab-content active" id="overview">
+                <div id="overviewContent">
+                    <div class="no-data-state">
+                        <div class="no-data-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="no-data-text">No Data Available</div>
+                        <div class="no-data-subtext">Select a channel to view analytics</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Post Details Tab -->
+            <div class="tab-content" id="post-details">
+                <div id="postDetailsContent">
+                    <div class="no-data-state">
+                        <div class="no-data-icon"><i class="fas fa-inbox"></i></div>
+                        <div class="no-data-text">No Posts</div>
+                        <div class="no-data-subtext">Select a channel to view post insights</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Post Detail Modal -->
+<div class="post-detail-modal" id="postDetailModal">
+    <div class="post-detail-modal-content">
+        <div class="post-detail-header">
+            <div class="post-detail-header-info">
+                <h3 id="postDetailTitle">Post Details</h3>
+                <p id="postDetailDate"></p>
+                <div id="postDetailPages" style="margin-top: 8px;"></div>
+            </div>
+            <button class="post-detail-close" onclick="closePostDetail()">×</button>
+        </div>
+        <div class="post-detail-body">
+            <!-- Media Section -->
+            <div class="detail-section" id="mediaSection" style="display: none;">
+                <h4>Media</h4>
+                <div class="detail-media-carousel" id="mediaCarousel"></div>
+            </div>
+
+            <!-- Content Section -->
+            <div class="detail-section">
+                <h4>Content</h4>
+                <div class="detail-content">
+                    <p class="detail-caption" id="postDetailCaption"></p>
+                </div>
+            </div>
+
+            <!-- Key Metrics Section -->
+            <div class="detail-section">
+                <h4>Performance Metrics</h4>
+                <div class="insight-metrics">
+                    <div class="insight-metric">
+                        <div class="insight-metric-label">Impressions</div>
+                        <div class="insight-metric-value" id="detailImpressions">0</div>
+                    </div>
+                    <div class="insight-metric">
+                        <div class="insight-metric-label">Reach</div>
+                        <div class="insight-metric-value" id="detailReach">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Engagement Breakdown -->
+            <div class="detail-section">
+                <h4>Engagement Breakdown</h4>
+                <div class="engagement-breakdown">
+                    <div class="breakdown-item">
+                        <div class="breakdown-label">Likes</div>
+                        <div class="breakdown-value" id="detailLikes">0</div>
+                    </div>
+                    <div class="breakdown-item">
+                        <div class="breakdown-label">Comments</div>
+                        <div class="breakdown-value" id="detailComments">0</div>
+                    </div>
+                    <div class="breakdown-item">
+                        <div class="breakdown-label">Shares</div>
+                        <div class="breakdown-value" id="detailShares">0</div>
+                    </div>
+                    <div class="breakdown-item">
+                        <div class="breakdown-label">Saves</div>
+                        <div class="breakdown-value" id="detailSaves">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Link Clicks -->
+            <div class="detail-section">
+                <h4>Link Engagement</h4>
+                <div class="insight-metrics">
+                    <div class="insight-metric">
+                        <div class="insight-metric-label">Link Clicks</div>
+                        <div class="insight-metric-value" id="detailClicks">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allChannels = {
+        {% for platform, pages in pages_by_platform.items() %}
+            '{{ platform }}': [
+                {% for page in pages %}
+                    {
+                        id: {{ page.id }},
+                        name: '{{ page.page_name }}',
+                        platform: '{{ page.platform }}'
+                    }{{ "," if not loop.last else "" }}
+                {% endfor %}
+            ]{{ "," if not loop.last else "" }}
+        {% endfor %}
+    };
+
+    let allPosts = {{ user_posts | tojson }};
+    let selectedChannel = null;
+    let selectedPage = null;
+    let currentDetailPost = null;
+
+    function selectChannel(platform, button) {
+        selectedChannel = platform;
+        selectedPage = null;
+
+        // Update button states
+        document.querySelectorAll('.channel-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        button.classList.add('active');
+
+        // Update page selector
+        const pageContainer = document.getElementById('pageSelectorContainer');
+        const pageSelector = document.getElementById('pageSelector');
+        const channelTitle = document.getElementById('channelTitle');
+
+        if (allChannels[platform]) {
+            pageContainer.style.display = 'flex';
+            pageSelector.innerHTML = '<option value="">All Pages</option>';
+            allChannels[platform].forEach(page => {
+                const option = document.createElement('option');
+                option.value = page.id;
+                option.textContent = page.name;
+                pageSelector.appendChild(option);
+            });
+            channelTitle.textContent = `${platform.charAt(0).toUpperCase() + platform.slice(1)} Analytics`;
+        }
+
+        loadAnalytics();
+    }
+
+    function selectPage() {
+        selectedPage = document.getElementById('pageSelector').value || null;
+        loadAnalytics();
+    }
+
+    function switchTab(tabName) {
+        // Update button states
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+        // Update content display
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(tabName).classList.add('active');
+    }
+
+    function loadAnalytics() {
+        if (!selectedChannel) return;
+
+        const overviewContent = document.getElementById('overviewContent');
+        const postDetailsContent = document.getElementById('postDetailsContent');
+
+        // Get posts for selected channel/page
+        const filteredPosts = getFilteredPosts();
+
+        if (filteredPosts.length === 0) {
+            overviewContent.innerHTML = `
+                <div class="no-data-state">
+                    <div class="no-data-icon"><i class="fas fa-chart-line"></i></div>
+                    <div class="no-data-text">No Data Available</div>
+                    <div class="no-data-subtext">No posts found for this channel</div>
+                </div>
+            `;
+            postDetailsContent.innerHTML = `
+                <div class="no-data-state">
+                    <div class="no-data-icon"><i class="fas fa-inbox"></i></div>
+                    <div class="no-data-text">No Posts</div>
+                    <div class="no-data-subtext">No posts found for this channel</div>
+                </div>
+            `;
+            return;
+        }
+
+        // Calculate metrics
+        const metrics = calculateMetrics(filteredPosts);
+        renderOverview(metrics, filteredPosts);
+        renderPostDetails(filteredPosts);
+    }
+
+    function getFilteredPosts() {
+        if (!selectedChannel) return [];
+
+        return allPosts.filter(post => {
+            if (!post.pages || post.pages.length === 0) return false;
+            const hasChannel = post.pages.some(p => p.platform === selectedChannel);
+            if (selectedPage) {
+                return hasChannel && post.pages.some(p => p.page_id == selectedPage);
+            }
+            return hasChannel;
+        });
+    }
+
+    function getPostAnalyticsForChannel(post) {
+        const pageAnalytics = post.pages.find(p => p.platform === selectedChannel && (!selectedPage || p.page_id == selectedPage));
+        return pageAnalytics ? pageAnalytics.analytics : null;
+    }
+
+    function calculateMetrics(posts) {
+        const totalPosts = posts.length;
+        let totalImpressions = 0;
+        let totalReach = 0;
+        let totalEngagement = 0;
+        let totalClicks = 0;
+
+        posts.forEach(post => {
+            const analytics = getPostAnalyticsForChannel(post);
+            if (analytics) {
+                totalImpressions += analytics.impressions;
+                totalReach += analytics.reach;
+                const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0);
+                totalEngagement += engagement;
+                totalClicks += analytics.clicks || 0;
+            }
+        });
+
+        const avgEngagementPerPost = totalPosts > 0 ? (totalEngagement / totalPosts).toFixed(0) : 0;
+
+        return {
+            totalPosts,
+            totalImpressions,
+            totalReach,
+            totalEngagement,
+            totalClicks,
+            avgEngagementPerPost
+        };
+    }
+
+    function renderOverview(metrics, posts) {
+        const html = `
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Posts</div>
+                    <div class="metric-value">${metrics.totalPosts}</div>
+                    <div class="metric-change">Posts analyzed</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Impressions</div>
+                    <div class="metric-value">${metrics.totalImpressions.toLocaleString()}</div>
+                    <div class="metric-change">Total views</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Reach</div>
+                    <div class="metric-value">${metrics.totalReach.toLocaleString()}</div>
+                    <div class="metric-change">Unique people</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Engagement</div>
+                    <div class="metric-value">${metrics.totalEngagement}</div>
+                    <div class="metric-change">Likes + Comments + Shares + Saves</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Clicks</div>
+                    <div class="metric-value">${metrics.totalClicks}</div>
+                    <div class="metric-change">Link/Call clicks</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Engagement/Post</div>
+                    <div class="metric-value">${metrics.avgEngagementPerPost}</div>
+                    <div class="metric-change">Per post average</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Post Performance Trends</div>
+                <p style="color: #999; text-align: center; padding: 40px 0;">Chart integration coming soon with Chart.js library</p>
+            </div>
+        `;
+        document.getElementById('overviewContent').innerHTML = html;
+    }
+
+    function renderPostDetails(posts) {
+        const html = posts.map(post => {
+            const analytics = getPostAnalyticsForChannel(post);
+            if (!analytics) return '';
+
+            const caption = (post.caption || post.content).substring(0, 100);
+            const hasMedia = post.media && post.media.length > 0;
+            const mediaPreview = hasMedia ? post.media[0] : null;
+            const mediaType = mediaPreview ? mediaPreview.type : 'text';
+
+            let previewHTML = '<div class="post-media-preview">';
+            if (mediaPreview && mediaPreview.type === 'image') {
+                previewHTML += `<img src="${mediaPreview.url}" alt="Post media" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\'fas fa-image\\'></i>';">`;
+            } else if (mediaPreview && mediaPreview.type === 'video') {
+                previewHTML += `<i class="fas fa-video"></i>`;
+            } else {
+                previewHTML += '<i class="fas fa-image"></i>';
+            }
+            previewHTML += '</div>';
+
+            return `
+                <div class="post-item" onclick="showPostDetail(${post.id})">
+                    ${previewHTML}
+                    <div class="post-content">
+                        <p class="post-caption">${caption}${(post.caption || post.content).length > 100 ? '...' : ''}</p>
+                        <div class="post-meta">
+                            <span><i class="fas fa-calendar"></i> ${formatDate(post.scheduled_time || post.sent_time)}</span>
+                            <span><i class="fas fa-images"></i> ${post.media.length} media</span>
+                        </div>
+                        <div class="post-stats">
+                            <div class="stat-item">
+                                <div class="stat-label">Impressions</div>
+                                <div class="stat-value">${analytics.impressions}</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Reach</div>
+                                <div class="stat-value">${analytics.reach}</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-label">Engagement</div>
+                                <div class="stat-value">${(analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="post-actions">
+                        <button class="view-detail-btn" onclick="event.stopPropagation(); showPostDetail(${post.id});">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('postDetailsContent').innerHTML = html;
+    }
+
+    function showPostDetail(postId) {
+        const post = allPosts.find(p => p.id === postId);
+        if (!post) return;
+
+        currentDetailPost = post;
+        const pageAnalytics = post.pages.find(p => p.platform === selectedChannel && (!selectedPage || p.page_id == selectedPage));
+        const analytics = pageAnalytics ? pageAnalytics.analytics : null;
+
+        if (!analytics) return;
+
+        // Set header info
+        const caption = (post.caption || post.content).substring(0, 50);
+        document.getElementById('postDetailTitle').textContent = caption + (caption.length > 50 ? '...' : '');
+        document.getElementById('postDetailDate').textContent = formatDate(post.scheduled_time || post.sent_time);
+        
+        // Set page badges
+        const pageBadges = post.pages.map(p => 
+            `<span class="page-badge ${p.platform}">${p.page_name}</span>`
+        ).join('');
+        document.getElementById('postDetailPages').innerHTML = pageBadges;
+
+        // Set media section
+        const mediaSection = document.getElementById('mediaSection');
+        if (post.media && post.media.length > 0) {
+            mediaSection.style.display = 'block';
+            const carousel = post.media.map(m => {
+                if (m.type === 'image') {
+                    return `<div class="carousel-item"><img src="${m.url}" alt="Media" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\'fas fa-image\\'></i>';"></div>`;
+                } else {
+                    return `<div class="carousel-item"><i class="fas fa-video"></i></div>`;
+                }
+            }).join('');
+            document.getElementById('mediaCarousel').innerHTML = carousel;
+        } else {
+            mediaSection.style.display = 'none';
+        }
+
+        // Set content
+        document.getElementById('postDetailCaption').textContent = post.caption || post.content;
+
+        // Set metrics
+        const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0);
+        document.getElementById('detailImpressions').textContent = (analytics.impressions || 0).toLocaleString();
+        document.getElementById('detailReach').textContent = (analytics.reach || 0).toLocaleString();
+        document.getElementById('detailLikes').textContent = (analytics.likes || 0);
+        document.getElementById('detailComments').textContent = (analytics.comments || 0);
+        document.getElementById('detailShares').textContent = (analytics.shares || 0);
+        document.getElementById('detailSaves').textContent = (analytics.saves || 0);
+        document.getElementById('detailClicks').textContent = (analytics.clicks || 0);
+
+        document.getElementById('postDetailModal').classList.add('active');
+    }
+
+    function closePostDetail() {
+        document.getElementById('postDetailModal').classList.remove('active');
+    }
+
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('postDetailModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closePostDetail();
+        }
+    });
+</script>
+{% endblock %}
+            <ul class="channel-list">
+                {% if pages_by_platform %}
+                    {% for platform, pages in pages_by_platform.items() %}
+                        {% if pages %}
+                        <li class="channel-item">
+                            <button class="channel-btn" data-platform="{{ platform }}" onclick="selectChannel('{{ platform }}', this)">
+                                <span class="channel-icon">
+                                    {% if platform == 'facebook' %}
+                                        <i class="fab fa-facebook" style="color: #1877f2;"></i>
+                                    {% elif platform == 'instagram' %}
+                                        <i class="fab fa-instagram"></i>
+                                    {% elif platform == 'tiktok' %}
+                                        <i class="fab fa-tiktok"></i>
+                                    {% endif %}
+                                </span>
+                                {{ platform.capitalize() }}
+                            </button>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="analyze-content">
+        <!-- Header with Channel Name and Page Selector -->
+        <div class="analyze-header">
+            <h2 id="channelTitle">Select a Channel</h2>
+            <div class="page-selector" id="pageSelectorContainer" style="display: none;">
+                <select class="page-dropdown" id="pageSelector" onchange="selectPage()">
+                    <option value="">All Pages</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="analyze-tabs">
+            <button class="tab-button active" data-tab="overview" onclick="switchTab('overview')">
+                <i class="fas fa-chart-bar" style="margin-right: 8px;"></i>Overview
+            </button>
+            <button class="tab-button" data-tab="post-details" onclick="switchTab('post-details')">
+                <i class="fas fa-list" style="margin-right: 8px;"></i>Post Details
+            </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="analyze-body">
+            <!-- Overview Tab -->
+            <div class="tab-content active" id="overview">
+                <div id="overviewContent">
+                    <div class="no-data-state">
+                        <div class="no-data-icon"><i class="fas fa-chart-line"></i></div>
+                        <div class="no-data-text">No Data Available</div>
+                        <div class="no-data-subtext">Select a channel to view analytics</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Post Details Tab -->
+            <div class="tab-content" id="post-details">
+                <div id="postDetailsContent">
+                    <div class="no-data-state">
+                        <div class="no-data-icon"><i class="fas fa-inbox"></i></div>
+                        <div class="no-data-text">No Posts</div>
+                        <div class="no-data-subtext">Select a channel to view post insights</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Post Detail Modal -->
+<div class="post-detail-modal" id="postDetailModal">
+    <div class="post-detail-modal-content">
+        <div class="post-detail-header">
+            <div>
+                <h3 id="postDetailTitle">Post Details</h3>
+                <p id="postDetailDate" style="margin: 4px 0 0 0; font-size: 13px; color: #65676b;"></p>
+            </div>
+            <button class="post-detail-close" onclick="closePostDetail()">×</button>
+        </div>
+        <div class="post-detail-body">
+            <div class="detail-section">
+                <h4>Caption</h4>
+                <p id="postDetailCaption" style="margin: 0; font-size: 14px; color: #050505; line-height: 1.5;"></p>
+            </div>
+            <div class="detail-section">
+                <h4>Core Metrics</h4>
+                <div class="metrics-grid-detailed">
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Impressions (Views)</div>
+                        <div class="metric-value-detailed" id="detailImpressions">0</div>
+                        <div class="metric-formula-detailed">Total times post was seen</div>
+                    </div>
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Reach</div>
+                        <div class="metric-value-detailed" id="detailReach">0</div>
+                        <div class="metric-formula-detailed">Unique people who saw it</div>
+                    </div>
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Total Engagement</div>
+                        <div class="metric-value-detailed" id="detailTotalEngagement">0</div>
+                        <div class="metric-formula-detailed">Likes + Comments + Shares + Saves</div>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-section">
+                <h4>Engagement Breakdown</h4>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                    <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #65676b; margin-bottom: 6px; font-weight: 600; text-transform: uppercase;">Likes</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #f02849;" id="detailLikes">0</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #65676b; margin-bottom: 6px; font-weight: 600; text-transform: uppercase;">Comments</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #1877f2;" id="detailComments">0</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #65676b; margin-bottom: 6px; font-weight: 600; text-transform: uppercase;">Shares</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #31a24c;" id="detailShares">0</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                        <div style="font-size: 12px; color: #65676b; margin-bottom: 6px; font-weight: 600; text-transform: uppercase;">Saves</div>
+                        <div style="font-size: 22px; font-weight: 700; color: #e71e63;" id="detailSaves">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-section">
+                <h4>Link Performance</h4>
+                <div class="metrics-grid-detailed">
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Link Clicks</div>
+                        <div class="metric-value-detailed" id="detailClicks">0</div>
+                        <div class="metric-formula-detailed">Clicks on post links/CTA</div>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-section">
+                <h4>Advanced Metrics</h4>
+                <div class="metrics-grid-detailed">
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Click-Through Rate (CTR)</div>
+                        <div class="metric-value-detailed" id="detailCTR">0%</div>
+                        <div class="metric-formula-detailed">Clicks ÷ Impressions × 100</div>
+                    </div>
+                    <div class="metric-item-detailed">
+                        <div class="metric-label-detailed">Engagement Rate</div>
+                        <div class="metric-value-detailed" id="detailEngagementRate">0%</div>
+                        <div class="metric-formula-detailed">Total Engagement ÷ Reach × 100</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allChannels = {
+        {% for platform, pages in pages_by_platform.items() %}
+            '{{ platform }}': [
+                {% for page in pages %}
+                    {
+                        id: {{ page.id }},
+                        name: '{{ page.page_name }}',
+                        platform: '{{ page.platform }}'
+                    }{{ "," if not loop.last else "" }}
+                {% endfor %}
+            ]{{ "," if not loop.last else "" }}
+        {% endfor %}
+    };
+
+    let allPosts = {{ user_posts | tojson }};
+    let selectedChannel = null;
+    let selectedPage = null;
+
+    function selectChannel(platform, button) {
+        selectedChannel = platform;
+        selectedPage = null;
+
+        // Update button states
+        document.querySelectorAll('.channel-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        button.classList.add('active');
+
+        // Update page selector
+        const pageContainer = document.getElementById('pageSelectorContainer');
+        const pageSelector = document.getElementById('pageSelector');
+        const channelTitle = document.getElementById('channelTitle');
+
+        if (allChannels[platform]) {
+            pageContainer.style.display = 'flex';
+            pageSelector.innerHTML = '<option value="">All Pages</option>';
+            allChannels[platform].forEach(page => {
+                const option = document.createElement('option');
+                option.value = page.id;
+                option.textContent = page.name;
+                pageSelector.appendChild(option);
+            });
+            channelTitle.textContent = `${platform.toUpperCase()} Analytics`;
+        }
+
+        loadAnalytics();
+    }
+
+    function selectPage() {
+        selectedPage = document.getElementById('pageSelector').value || null;
+        loadAnalytics();
+    }
+
+    function switchTab(tabName) {
+        // Update button states
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+        // Update content display
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(tabName).classList.add('active');
+    }
+
+    function loadAnalytics() {
+        if (!selectedChannel) return;
+
+        const overviewContent = document.getElementById('overviewContent');
+        const postDetailsContent = document.getElementById('postDetailsContent');
+
+        // Get posts for selected channel/page
+        const filteredPosts = getFilteredPosts();
+
+        if (filteredPosts.length === 0) {
+            overviewContent.innerHTML = `
+                <div class="no-data-state">
+                    <div class="no-data-icon"><i class="fas fa-chart-line"></i></div>
+                    <div class="no-data-text">No Data Available</div>
+                    <div class="no-data-subtext">No posts found for this channel</div>
+                </div>
+            `;
+            postDetailsContent.innerHTML = `
+                <div class="no-data-state">
+                    <div class="no-data-icon"><i class="fas fa-inbox"></i></div>
+                    <div class="no-data-text">No Posts</div>
+                    <div class="no-data-subtext">No posts found for this channel</div>
+                </div>
+            `;
+            return;
+        }
+
+        // Calculate metrics
+        const metrics = calculateMetrics(filteredPosts);
+        renderOverview(metrics, filteredPosts);
+        renderPostDetails(filteredPosts);
+    }
+
+    function getFilteredPosts() {
+        if (!selectedChannel) return [];
+
+        return allPosts.filter(post => {
+            if (!post.pages) return false;
+            const hasChannel = post.pages.some(p => p.platform === selectedChannel);
+            if (selectedPage) {
+                return hasChannel && post.pages.some(p => p.page_id == selectedPage);
+            }
+            return hasChannel;
+        }).map(post => {
+            // If a specific page is selected, show that page's metrics
+            if (selectedPage) {
+                const selectedPageData = post.pages.find(p => p.page_id == selectedPage);
+                if (selectedPageData && selectedPageData.analytics) {
+                    return {
+                        ...post,
+                        analytics: selectedPageData.analytics
+                    };
+                }
+            }
+            
+            // If browsing by channel without selecting a page, show the first page's metrics
+            // (don't aggregate/sum metrics from multiple pages)
+            const relevantPages = post.pages.filter(p => p.platform === selectedChannel);
+            if (relevantPages.length > 0 && relevantPages[0].analytics) {
+                return {
+                    ...post,
+                    analytics: relevantPages[0].analytics
+                };
+            }
+            
+            // No analytics available
+            return {
+                ...post,
+                analytics: {
+                    impressions: 0,
+                    reach: 0,
+                    clicks: 0,
+                    likes: 0,
+                    comments: 0,
+                    shares: 0,
+                    saves: 0
+                }
+            };
+        });
+    }
+
+    function calculateMetrics(posts) {
+        const totalPosts = posts.length;
+        const totalImpressions = posts.reduce((sum, p) => sum + (p.analytics?.impressions || 0), 0);
+        const totalEngagement = posts.reduce((sum, p) => sum + (p.analytics?.engagement || 0), 0);
+        const totalReach = posts.reduce((sum, p) => sum + (p.analytics?.reach || 0), 0);
+        const engagementRate = totalImpressions > 0 ? ((totalEngagement / totalImpressions) * 100).toFixed(2) : 0;
+
+        return {
+            totalPosts,
+            totalImpressions,
+            totalEngagement,
+            totalReach,
+            engagementRate,
+            avgEngagementPerPost: totalPosts > 0 ? (totalEngagement / totalPosts).toFixed(0) : 0
+        };
+    }
+
+    function renderOverview(metrics, posts) {
+        const html = `
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Posts</div>
+                    <div class="metric-value">${metrics.totalPosts}</div>
+                    <div class="metric-change">This period</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Impressions</div>
+                    <div class="metric-value">${metrics.totalImpressions.toLocaleString()}</div>
+                    <div class="metric-change">${metrics.totalImpressions > 0 ? 'Real data' : 'No data yet'}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Engagement</div>
+                    <div class="metric-value">${metrics.totalEngagement}</div>
+                    <div class="metric-change">${metrics.totalEngagement > 0 ? 'Real data' : 'No data yet'}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Engagement Rate</div>
+                    <div class="metric-value">${metrics.engagementRate}%</div>
+                    <div class="metric-change">Avg per post</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Reach</div>
+                    <div class="metric-value">${metrics.totalReach.toLocaleString()}</div>
+                    <div class="metric-change">${metrics.totalReach > 0 ? 'Real data' : 'No data yet'}</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Engagement/Post</div>
+                    <div class="metric-value">${metrics.avgEngagementPerPost}</div>
+                    <div class="metric-change">Per post average</div>
+                </div>
+            </div>
+        `;
+        document.getElementById('overviewContent').innerHTML = html;
+    }
+
+    function renderPostDetails(posts) {
+        const html = `
+            <div class="post-details-container">
+                ${posts.map(post => {
+                    const analytics = getPostAnalyticsForChannel(post);
+                    const date = new Date(post.scheduled_time || post.sent_time);
+                    const media = post.media && post.media.length > 0 ? post.media[0] : null;
+                    
+                    return `
+                        <div class="post-details-card">
+                            <div class="post-card-media">
+                                ${media ? (
+                                    media.type === 'image' 
+                                        ? `<img src="${media.url}" alt="Post media" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px 8px 0 0;">`
+                                        : `<video style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px 8px 0 0;"><source src="${media.url}" type="video/mp4"></video>`
+                                ) : `<div style="width: 100%; height: 200px; background: #f0f2f5; border-radius: 8px 8px 0 0; display: flex; align-items: center; justify-content: center;"><i class="fas fa-image" style="font-size: 40px; color: #ccc;"></i></div>`}
+                            </div>
+                            <div class="post-card-content">
+                                <div class="post-card-title">${post.caption.substring(0, 60)}${post.caption.length > 60 ? '...' : ''}</div>
+                                <div class="post-card-date">${formatDate(post.scheduled_time || post.sent_time)}</div>
+                                <div class="post-card-metrics">
+                                    <div class="post-metric-item">
+                                        <span class="post-metric-label">Reach</span>
+                                        <span class="post-metric-value">${(analytics?.reach || 0).toLocaleString()}</span>
+                                    </div>
+                                    <div class="post-metric-item">
+                                        <span class="post-metric-label">Views</span>
+                                        <span class="post-metric-value">${(analytics?.impressions || 0).toLocaleString()}</span>
+                                    </div>
+                                    <div class="post-metric-item">
+                                        <span class="post-metric-label">Engagement</span>
+                                        <span class="post-metric-value">${((analytics?.likes || 0) + (analytics?.comments || 0) + (analytics?.shares || 0) + (analytics?.saves || 0)).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <button class="view-detail-btn" onclick="showPostDetail(${post.id})">
+                                    View Full Details
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+        document.getElementById('postDetailsContent').innerHTML = html;
+    }
+
+    function showPostDetail(postId) {
+        const post = allPosts.find(p => p.id === postId);
+        if (!post) return;
+
+        // Get analytics for the selected channel/page
+        const analytics = getPostAnalyticsForChannel(post) || {
+            impressions: 0,
+            reach: 0,
+            clicks: 0,
+            likes: 0,
+            comments: 0,
+            shares: 0,
+            saves: 0
+        };
+
+        // Calculate derived metrics
+        const totalEngagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0);
+        const ctr = (analytics.impressions || 0) > 0 ? ((analytics.clicks || 0) / analytics.impressions * 100).toFixed(2) : '0';
+        const engagementRate = (analytics.reach || 0) > 0 ? (totalEngagement / analytics.reach * 100).toFixed(2) : '0';
+
+        // Update modal header
+        document.getElementById('postDetailTitle').textContent = post.caption.substring(0, 60) + (post.caption.length > 60 ? '...' : '');
+        document.getElementById('postDetailDate').textContent = formatDate(post.scheduled_time || post.sent_time);
+        document.getElementById('postDetailCaption').textContent = post.caption;
+        
+        // Update core metrics
+        document.getElementById('detailImpressions').textContent = (analytics.impressions || 0).toLocaleString();
+        document.getElementById('detailReach').textContent = (analytics.reach || 0).toLocaleString();
+        document.getElementById('detailTotalEngagement').textContent = totalEngagement.toLocaleString();
+        
+        // Update engagement breakdown
+        document.getElementById('detailLikes').textContent = (analytics.likes || 0).toLocaleString();
+        document.getElementById('detailComments').textContent = (analytics.comments || 0).toLocaleString();
+        document.getElementById('detailShares').textContent = (analytics.shares || 0).toLocaleString();
+        document.getElementById('detailSaves').textContent = (analytics.saves || 0).toLocaleString();
+        
+        // Update link clicks
+        document.getElementById('detailClicks').textContent = (analytics.clicks || 0).toLocaleString();
+        
+        // Update advanced metrics with formulas
+        document.getElementById('detailCTR').textContent = ctr + '%';
+        document.getElementById('detailEngagementRate').textContent = engagementRate + '%';
+        
+        // Show modal
+        const modal = document.getElementById('postDetailModal');
+        if (modal) {
+            modal.classList.add('active');
+        }
+    }
+
+    function closePostDetail() {
+        document.getElementById('postDetailModal').classList.remove('active');
+    }
+
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('postDetailModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closePostDetail();
+        }
+    });
+
+    // Manual refresh analytics function
+    async function manualRefreshAnalytics() {
+        const refreshBtn = document.getElementById('refreshBtn');
+        const refreshIcon = document.getElementById('refreshIcon');
+        const refreshText = document.getElementById('refreshText');
+        
+        // Disable button and show loading state
+        refreshBtn.disabled = true;
+        refreshIcon.classList.add('spinning');
+        refreshText.textContent = 'Refreshing...';
+        
+        try {
+            const response = await fetch('/api/analytics/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Show success message
+                refreshText.textContent = 'Refreshed!';
+                refreshIcon.classList.remove('spinning');
+                
+                // Wait 2 seconds then reload analytics
+                setTimeout(() => {
+                    // Reload the data from server
+                    location.reload();
+                }, 1500);
+            } else {
+                alert('Analytics refresh completed with some errors. Check console for details.');
+                refreshText.textContent = 'Refresh';
+                refreshIcon.classList.remove('spinning');
+                refreshBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error('Error refreshing analytics:', error);
+            alert('Failed to refresh analytics. Please try again.');
+            refreshText.textContent = 'Refresh';
+            refreshIcon.classList.remove('spinning');
+            refreshBtn.disabled = false;
+        }
+    }
+</script>

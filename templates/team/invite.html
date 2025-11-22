@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Invite Member - Postly Team{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 40px auto; padding: 20px;">
+    <div style="background: white; border-radius: 8px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <h1>Invite Team Member</h1>
+        <p style="color: #666; margin-bottom: 30px;">
+            Add a new member to <strong>{{ team.name }}</strong>
+        </p>
+        
+        <form method="POST" action="{{ url_for('team_invite', team_id=team.id) }}">
+            <div class="form-group">
+                <label for="invited_name">Name</label>
+                <input type="text" class="form-control" id="invited_name" name="invited_name" 
+                       required placeholder="e.g., John Doe" minlength="2" maxlength="255">
+                <small class="form-text text-muted">Full name of the person to invite</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="invited_email">Email</label>
+                <input type="email" class="form-control" id="invited_email" name="invited_email" 
+                       required placeholder="john@example.com">
+                <small class="form-text text-muted">They'll receive an invitation at this address</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="role">Role</label>
+                <select class="form-control" id="role" name="role" required>
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <small class="form-text text-muted">
+                    <strong>Member:</strong> Can create and manage content (based on channel permissions)<br>
+                    <strong>Admin:</strong> Can invite members, manage permissions, and approve content
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label style="font-weight: 600;">What will they be able to do?</label>
+                <div id="permissions-display" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-top: 10px;">
+                    <div id="member-permissions">
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Create and schedule posts (with channel permissions)</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Request approval for posts (if channel requires it)</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> View analytics for assigned channels</p>
+                        <p><i class="fas fa-times-circle" style="color: #dc3545;"></i> Cannot invite team members</p>
+                        <p><i class="fas fa-times-circle" style="color: #dc3545;"></i> Cannot manage other members</p>
+                        <p><i class="fas fa-times-circle" style="color: #dc3545;"></i> Cannot view organization settings</p>
+                    </div>
+                    <div id="admin-permissions" style="display: none;">
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Full posting on assigned channels</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Invite team members</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Manage member roles and permissions</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Approve content from other members</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Create custom analytics reports</p>
+                        <p><i class="fas fa-check-circle" style="color: #198754;"></i> Configure team settings</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i> Send Invitation
+                </button>
+                <a href="{{ url_for('team_dashboard', team_id=team.id) }}" class="btn btn-secondary">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const roleSelect = document.getElementById('role');
+    const memberPerms = document.getElementById('member-permissions');
+    const adminPerms = document.getElementById('admin-permissions');
+    
+    roleSelect.addEventListener('change', function() {
+        if (this.value === 'admin') {
+            memberPerms.style.display = 'none';
+            adminPerms.style.display = 'block';
+        } else {
+            memberPerms.style.display = 'block';
+            adminPerms.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %}

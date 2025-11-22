@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Channels - Postly Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .admin-channels-container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+    }
+
+    .admin-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 20px;
+    }
+
+    .admin-header h1 {
+        font-size: 32px;
+        font-weight: 700;
+        margin: 0;
+        color: #333;
+    }
+
+    .admin-header .btn-connect {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background-color 0.2s;
+    }
+
+    .admin-header .btn-connect:hover {
+        background-color: #0056b3;
+    }
+
+    .channels-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        gap: 20px;
+        margin-top: 30px;
+    }
+
+    .channel-card {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        transition: all 0.2s;
+    }
+
+    .channel-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border-color: #007bff;
+    }
+
+    .channel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+    }
+
+    .channel-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 5px;
+    }
+
+    .channel-platform {
+        font-size: 12px;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .channel-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .btn-small {
+        padding: 6px 12px;
+        font-size: 12px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-small:hover {
+        border-color: #007bff;
+        color: #007bff;
+    }
+
+    .btn-small.danger {
+        border-color: #dc3545;
+        color: #dc3545;
+    }
+
+    .btn-small.danger:hover {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .members-section {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .members-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #666;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+    }
+
+    .members-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .member-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        font-size: 13px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .member-item:last-child {
+        border-bottom: none;
+    }
+
+    .member-name {
+        color: #333;
+        font-weight: 500;
+    }
+
+    .member-access {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .member-access.full_posting {
+        background-color: #d4edda;
+        color: #155724;
+    }
+
+    .member-access.approval_required {
+        background-color: #fff3cd;
+        color: #856404;
+    }
+
+    .member-access.none {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #999;
+    }
+
+    .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+    }
+
+    .empty-state h3 {
+        color: #666;
+        margin-bottom: 10px;
+    }
+
+    /* Modals */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.4);
+    }
+
+    .modal.active {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-content {
+        background-color: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 15px;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+    }
+
+    .btn-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #999;
+    }
+
+    .btn-close:hover {
+        color: #333;
+    }
+
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+        font-size: 14px;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .btn-primary {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background-color 0.2s;
+    }
+
+    .btn-primary:hover {
+        background-color: #0056b3;
+    }
+
+    .btn-secondary {
+        background-color: #6c757d;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background-color 0.2s;
+    }
+
+    .btn-secondary:hover {
+        background-color: #5a6268;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-channels-container">
+    <div class="admin-header">
+        <h1>Channel Management</h1>
+        <button class="btn-connect" onclick="openConnectModal()">+ Connect Account</button>
+    </div>
+
+    {% if channels %}
+    <div class="channels-grid">
+        {% for channel in channels %}
+        <div class="channel-card">
+            <div class="channel-header">
+                <div>
+                    <div class="channel-name">{{ channel.name }}</div>
+                    <div class="channel-platform">{{ channel.platform }}</div>
+                </div>
+                <div class="channel-actions">
+                    <button class="btn-small" onclick="openMembersModal({{ channel.id }}, '{{ channel.name }}')">Members</button>
+                    <button class="btn-small danger" onclick="confirmDisconnect({{ channel.id }}, '{{ channel.name }}')">Disconnect</button>
+                </div>
+            </div>
+
+            <div class="members-section">
+                <div class="members-title">Team Members</div>
+                {% if channel.members %}
+                <ul class="members-list">
+                    {% for member in channel.members %}
+                    <li class="member-item">
+                        <span class="member-name">{{ member.username }}</span>
+                        <span class="member-access {{ member.access_level }}">{{ member.access_level }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p style="color: #999; font-size: 13px; margin: 0;">No members assigned</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <h3>No Connected Channels</h3>
+        <p>Connect your first social media account to get started</p>
+        <button class="btn-connect" onclick="openConnectModal()" style="margin-top: 20px;">Connect Account</button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Connect Account Modal -->
+<div id="connectModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Connect Social Account</h2>
+            <button class="btn-close" onclick="closeConnectModal()">&times;</button>
+        </div>
+        
+        <form id="connectForm" onsubmit="initiateAdminOAuth(event)">
+            <div class="form-group">
+                <label for="platform">Platform</label>
+                <select id="platform" required>
+                    <option value="">Select platform...</option>
+                    <option value="facebook">Facebook</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="tiktok">TikTok (Coming Soon)</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" onclick="closeConnectModal()">Cancel</button>
+                <button type="submit" class="btn-primary">Connect Account</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Members Modal -->
+<div id="membersModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="membersModalTitle">Channel Members</h2>
+            <button class="btn-close" onclick="closeMembersModal()">&times;</button>
+        </div>
+
+        <div id="membersModalBody"></div>
+
+        <div class="modal-actions">
+            <button type="button" class="btn-secondary" onclick="closeMembersModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const teamId = {{ team.id }};
+    let currentChannelId = null;
+
+    function openConnectModal() {
+        document.getElementById('connectModal').classList.add('active');
+    }
+
+    function closeConnectModal() {
+        document.getElementById('connectModal').classList.remove('active');
+    }
+
+    function openMembersModal(channelId, channelName) {
+        currentChannelId = channelId;
+        document.getElementById('membersModalTitle').textContent = `Members - ${channelName}`;
+        
+        // Build members list from DOM
+        const card = event.target.closest('.channel-card');
+        const membersList = card.querySelector('.members-list');
+        const membersHtml = membersList ? membersList.innerHTML : '<p>No members assigned</p>';
+        
+        document.getElementById('membersModalBody').innerHTML = `
+            <ul class="members-list">${membersHtml}</ul>
+        `;
+        
+        document.getElementById('membersModal').classList.add('active');
+    }
+
+    function closeMembersModal() {
+        document.getElementById('membersModal').classList.remove('active');
+    }
+
+    function confirmDisconnect(channelId, channelName) {
+        if (confirm(`Are you sure you want to disconnect "${channelName}"? This cannot be undone.`)) {
+            disconnectChannel(channelId, channelName);
+        }
+    }
+
+    function initiateAdminOAuth(event) {
+        event.preventDefault();
+        
+        const platform = document.getElementById('platform').value;
+        
+        if (!platform) {
+            alert('Please select a platform');
+            return;
+        }
+
+        if (platform === 'tiktok') {
+            alert('TikTok integration coming soon');
+            return;
+        }
+
+        // Call API to initiate OAuth
+        fetch('/api/admin/connect-account', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                team_id: teamId,
+                platform: platform
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.oauth_url) {
+                // Store OAuth state in session via hidden form (Flask session)
+                window.location.href = data.oauth_url;
+            } else {
+                alert('Error: ' + (data.error || 'Failed to initiate OAuth'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to connect account');
+        });
+    }
+
+    function disconnectChannel(channelId, channelName) {
+        fetch('/api/admin/disconnect-channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                team_id: teamId,
+                channel_id: channelId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Channel "${channelName}" has been disconnected`);
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to disconnect channel'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to disconnect channel');
+        });
+    }
+
+    // Close modals when clicking outside
+    window.onclick = function(event) {
+        const connectModal = document.getElementById('connectModal');
+        const membersModal = document.getElementById('membersModal');
+        
+        if (event.target === connectModal) {
+            closeConnectModal();
+        }
+        if (event.target === membersModal) {
+            closeMembersModal();
+        }
+    }
+</script>
+{% endblock %}

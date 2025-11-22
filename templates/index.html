@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Postly - Social Media Management Platform{% endblock %}
+
+{% block content %}
+{% if 'user_id' in session %}
+    <!-- Redirect logged-in users to dashboard -->
+    <script>
+        window.location.href = "{{ url_for('publish') }}";
+    </script>
+    <div class="container text-center py-5">
+        <p>Redirecting to your dashboard...</p>
+    </div>
+{% else %}
+<div class="container">
+    <!-- Landing Page Hero -->
+    <div class="row align-items-center py-5">
+        <div class="col-md-6">
+            <h1 class="display-4 fw-bold mb-4">Manage Your Social Media Like a Pro</h1>
+            <p class="lead mb-4">
+                Postly is a simple, powerful social media management platform that helps you schedule posts,
+                manage teams, and analyze performance across Facebook, Instagram, and TikTok.
+            </p>
+            <div class="d-grid gap-2 d-sm-flex">
+                <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg px-4 gap-3">
+                    Get Started Free
+                </a>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-4">
+                    Sign In
+                </a>
+            </div>
+        </div>
+        <div class="col-md-6 text-center">
+            <div style="font-size: 5rem; color: #007bff; margin-bottom: 2rem;">
+                <i class="fas fa-rocket"></i>
+            </div>
+            <p class="text-muted">Schedule • Publish • Analyze • Collaborate</p>
+        </div>
+    </div>
+    
+    <!-- Features Section -->
+    <div class="row py-5">
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <div style="font-size: 2.5rem; color: #007bff; margin-bottom: 1rem;">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <h5 class="card-title">Schedule Posts</h5>
+                    <p class="card-text">Schedule posts across multiple platforms in advance and reach your audience at the perfect time.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <div style="font-size: 2.5rem; color: #007bff; margin-bottom: 1rem;">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <h5 class="card-title">Team Collaboration</h5>
+                    <p class="card-text">Invite team members, manage permissions, and streamline your team's workflow.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <div style="font-size: 2.5rem; color: #007bff; margin-bottom: 1rem;">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h5 class="card-title">Analytics</h5>
+                    <p class="card-text">Track engagement and performance metrics to understand what resonates with your audience.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Social Proof Section -->
+    <div class="row py-5 bg-light rounded-3 p-5">
+        <div class="col-md-6 mb-3 mb-md-0 text-center">
+            <h3 class="fw-bold">100,000+</h3>
+            <p class="text-muted">Teams trust Postly</p>
+        </div>
+        <div class="col-md-6 text-center">
+            <h3 class="fw-bold">Multiple Platforms</h3>
+            <p class="text-muted">Facebook • Instagram • TikTok</p>
+        </div>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="row py-5 text-center">
+        <div class="col-md-8 mx-auto">
+            <h2 class="fw-bold mb-3">Ready to transform your social media?</h2>
+            <p class="lead mb-4">Start managing your social media like a pro. No credit card required.</p>
+            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">
+                Get Started for Free
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+

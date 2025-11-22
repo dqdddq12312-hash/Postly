@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Team Settings - Postly{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 40px auto; padding: 20px;">
+    <div style="background: white; border-radius: 8px; padding: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <h1>Team Settings</h1>
+        
+        <form method="POST" action="{{ url_for('team_settings') }}">
+            <div class="form-group">
+                <label for="name">Team Name</label>
+                <input type="text" class="form-control" id="name" name="name" 
+                       value="{{ team.name }}" required minlength="3" maxlength="255">
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <strong>Team Information:</strong>
+                <p style="margin: 10px 0 0 0; color: #666;">
+                    Owner: <strong>{{ team.owner.username }}</strong><br>
+                    Members: <strong>{{ team.members|length + 1 }}</strong><br>
+                    Created: <strong>{{ team.created_at.strftime('%b %d, %Y') }}</strong>
+                </p>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 30px;">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Settings
+                </button>
+                <a href="{{ url_for('team_dashboard') }}" class="btn btn-secondary">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

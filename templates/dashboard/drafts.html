@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Draft Approval Queue - Postly{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h2">Draft Approval Queue</h1>
+            <p class="text-muted">Review and approve draft posts from team members</p>
+        </div>
+    </div>
+
+    <!-- Tabs for drafts pending approval vs rejected drafts -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="pending-tab" data-bs-toggle="tab" href="#pending" role="tab">
+                Pending Approval <span class="badge bg-warning" id="pending-count">0</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="approved-tab" data-bs-toggle="tab" href="#approved" role="tab">
+                Approved <span class="badge bg-success" id="approved-count">0</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="rejected-tab" data-bs-toggle="tab" href="#rejected" role="tab">
+                Rejected <span class="badge bg-danger" id="rejected-count">0</span>
+            </a>
+        </li>
+    </ul>
+
+    <!-- Tab content -->
+    <div class="tab-content">
+        <!-- Pending drafts -->
+        <div class="tab-pane fade show active" id="pending" role="tabpanel">
+            <div id="pending-drafts-container">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Approved drafts -->
+        <div class="tab-pane fade" id="approved" role="tabpanel">
+            <div id="approved-drafts-container">
+                <p class="text-muted text-center py-5">No approved posts yet</p>
+            </div>
+        </div>
+
+        <!-- Rejected drafts -->
+        <div class="tab-pane fade" id="rejected" role="tabpanel">
+            <div id="rejected-drafts-container">
+                <p class="text-muted text-center py-5">No rejected drafts yet</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Approval Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Review Draft Post</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="draft-preview">
+                    <div class="mb-3">
+                        <label class="form-label">Submitted by</label>
+                        <p id="draft-submitted-by">-</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Content</label>
+                        <div class="border p-3 bg-light" id="draft-content">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Scheduled for</label>
+                        <p id="draft-pages">-</p>
+                    </div>
+                    <div class="mb-3">
+                        <label for="approval-notes" class="form-label">Approval Notes (optional)</label>
+                        <textarea class="form-control" id="approval-notes" rows="3" placeholder="Add feedback or notes..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="reject-btn">Reject</button>
+                <button type="button" class="btn btn-success" id="approve-btn">Approve</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rejection Modal -->
+<div class="modal fade" id="rejectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reject Draft</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label for="rejection-notes" class="form-label">Rejection Reason</label>
+                <textarea class="form-control" id="rejection-notes" rows="4" placeholder="Explain why this post is being rejected..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirm-reject-btn">Confirm Rejection</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentDraftId = null;
+    let approveModal = null;
+    let rejectModal = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        approveModal = new bootstrap.Modal(document.getElementById('approveModal'));
+        rejectModal = new bootstrap.Modal(document.getElementById('rejectModal'));
+        loadDrafts();
+    });
+
+    function loadDrafts() {
+        const teamId = new URLSearchParams(window.location.search).get('team_id');
+        const url = teamId ? `/api/drafts?team_id=${teamId}` : '/api/drafts';
+
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    displayDrafts(data.drafts || []);
+                } else {
+                    showError(data.error || 'Failed to load drafts');
+                }
+            })
+            .catch(err => {
+                console.error('Error loading drafts:', err);
+                showError('Failed to load drafts');
+            });
+    }
+
+    function displayDrafts(drafts) {
+        const pendingContainer = document.getElementById('pending-drafts-container');
+        const approvedContainer = document.getElementById('approved-drafts-container');
+        const rejectedContainer = document.getElementById('rejected-drafts-container');
+        
+        const pendingDrafts = drafts.filter(d => d.status === 'pending');
+        const approvedDrafts = drafts.filter(d => d.status === 'approved');
+        const rejectedDrafts = drafts.filter(d => d.status === 'rejected');
+        
+        // Display Pending Drafts
+        if (pendingDrafts.length === 0) {
+            pendingContainer.innerHTML = '<p class="text-muted text-center py-5">No drafts pending approval</p>';
+            document.getElementById('pending-count').textContent = '0';
+        } else {
+            document.getElementById('pending-count').textContent = pendingDrafts.length;
+            pendingContainer.innerHTML = pendingDrafts.map(draft => `
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row align-items-start">
+                            <div class="col">
+                                <h6 class="card-title mb-2">
+                                    Submitted by: <strong>${escapeHtml(draft.submitted_by)}</strong>
+                                </h6>
+                                <p class="card-text text-muted small mb-2">
+                                    ${new Date(draft.submitted_at).toLocaleString()}
+                                </p>
+                                <p class="card-text mb-2">
+                                    <strong>Content:</strong><br>
+                                    ${escapeHtml(draft.content.substring(0, 150))}${draft.content.length > 150 ? '...' : ''}
+                                </p>
+                                <p class="card-text small">
+                                    <strong>Pages:</strong>
+                                    ${draft.pages.map(p => `
+                                        <span class="badge bg-info">${escapeHtml(p.name)}</span>
+                                    `).join('')}
+                                </p>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-primary" onclick="reviewDraft(${draft.id}, '${escapeHtml(draft.submitted_by)}', '${escapeHtml(draft.content)}', '${JSON.stringify(draft.pages).replace(/"/g, '&quot;')}')">
+                                    Review
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Display Approved Drafts
+        if (approvedDrafts.length === 0) {
+            approvedContainer.innerHTML = '<p class="text-muted text-center py-5">No approved posts yet</p>';
+            document.getElementById('approved-count').textContent = '0';
+        } else {
+            document.getElementById('approved-count').textContent = approvedDrafts.length;
+            approvedContainer.innerHTML = approvedDrafts.map(draft => `
+                <div class="card mb-3 border-success">
+                    <div class="card-body">
+                        <div class="row align-items-start">
+                            <div class="col">
+                                <h6 class="card-title mb-2">
+                                    <span class="badge bg-success">APPROVED</span>
+                                    Submitted by: <strong>${escapeHtml(draft.submitted_by)}</strong>
+                                </h6>
+                                <p class="card-text text-muted small mb-2">
+                                    Submitted: ${new Date(draft.submitted_at).toLocaleString()}
+                                    ${draft.approved_by ? `<br>Approved by: <strong>${escapeHtml(draft.approved_by)}</strong>` : ''}
+                                    ${draft.approved_at ? `<br>Approved on: ${new Date(draft.approved_at).toLocaleString()}` : ''}
+                                </p>
+                                <p class="card-text mb-2">
+                                    <strong>Content:</strong><br>
+                                    ${escapeHtml(draft.content.substring(0, 150))}${draft.content.length > 150 ? '...' : ''}
+                                </p>
+                                <p class="card-text small">
+                                    <strong>Pages:</strong>
+                                    ${draft.pages.map(p => `
+                                        <span class="badge bg-info">${escapeHtml(p.name)}</span>
+                                    `).join('')}
+                                </p>
+                                ${draft.approval_notes ? `
+                                    <p class="card-text small mt-2">
+                                        <strong>Approval Notes:</strong><br>
+                                        ${escapeHtml(draft.approval_notes)}
+                                    </p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Display Rejected Drafts
+        if (rejectedDrafts.length === 0) {
+            rejectedContainer.innerHTML = '<p class="text-muted text-center py-5">No rejected drafts yet</p>';
+            document.getElementById('rejected-count').textContent = '0';
+        } else {
+            document.getElementById('rejected-count').textContent = rejectedDrafts.length;
+            rejectedContainer.innerHTML = rejectedDrafts.map(draft => `
+                <div class="card mb-3 border-danger">
+                    <div class="card-body">
+                        <div class="row align-items-start">
+                            <div class="col">
+                                <h6 class="card-title mb-2">
+                                    <span class="badge bg-danger">REJECTED</span>
+                                    Submitted by: <strong>${escapeHtml(draft.submitted_by)}</strong>
+                                </h6>
+                                <p class="card-text text-muted small mb-2">
+                                    Submitted: ${new Date(draft.submitted_at).toLocaleString()}
+                                    ${draft.approved_by ? `<br>Rejected by: <strong>${escapeHtml(draft.approved_by)}</strong>` : ''}
+                                    ${draft.approved_at ? `<br>Rejected on: ${new Date(draft.approved_at).toLocaleString()}` : ''}
+                                </p>
+                                <p class="card-text mb-2">
+                                    <strong>Content:</strong><br>
+                                    ${escapeHtml(draft.content.substring(0, 150))}${draft.content.length > 150 ? '...' : ''}
+                                </p>
+                                <p class="card-text small">
+                                    <strong>Pages:</strong>
+                                    ${draft.pages.map(p => `
+                                        <span class="badge bg-info">${escapeHtml(p.name)}</span>
+                                    `).join('')}
+                                </p>
+                                ${draft.approval_notes ? `
+                                    <p class="card-text small mt-2 text-danger">
+                                        <strong>Rejection Reason:</strong><br>
+                                        ${escapeHtml(draft.approval_notes)}
+                                    </p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    function reviewDraft(draftId, submittedBy, content, pagesJson) {
+        currentDraftId = draftId;
+        const pages = JSON.parse(pagesJson);
+
+        document.getElementById('draft-submitted-by').textContent = submittedBy;
+        document.getElementById('draft-content').textContent = content;
+        document.getElementById('draft-pages').innerHTML = pages.map(p => 
+            `<span class="badge bg-info">${escapeHtml(p.name)}</span>`
+        ).join(' ');
+        document.getElementById('approval-notes').value = '';
+        
+        approveModal.show();
+    }
+
+    document.getElementById('approve-btn').addEventListener('click', function() {
+        approveDraft();
+    });
+
+    document.getElementById('reject-btn').addEventListener('click', function() {
+        approveModal.hide();
+        rejectModal.show();
+    });
+
+    function approveDraft() {
+        const notes = document.getElementById('approval-notes').value;
+        
+        fetch(`/api/drafts/${currentDraftId}/approve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                approval_notes: notes
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Draft approved successfully!');
+                approveModal.hide();
+                loadDrafts();
+            } else {
+                showError(data.error || 'Failed to approve draft');
+            }
+        })
+        .catch(err => {
+            console.error('Error approving draft:', err);
+            showError('Failed to approve draft');
+        });
+    }
+
+    document.getElementById('confirm-reject-btn').addEventListener('click', function() {
+        const notes = document.getElementById('rejection-notes').value;
+        
+        fetch(`/api/drafts/${currentDraftId}/reject`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                rejection_notes: notes
+            })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Draft rejected. Member can edit and resubmit.');
+                rejectModal.hide();
+                loadDrafts();
+            } else {
+                showError(data.error || 'Failed to reject draft');
+            }
+        })
+        .catch(err => {
+            console.error('Error rejecting draft:', err);
+            showError('Failed to reject draft');
+        });
+    });
+
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function showError(message) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('.container-fluid').prepend(alert);
+    }
+</script>
+
+<style>
+    .card {
+        border-left: 4px solid #007bff;
+    }
+    
+    .card.rejected {
+        border-left-color: #dc3545;
+    }
+    
+    .badge {
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+</style>
+{% endblock %}

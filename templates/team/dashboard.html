@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}Team - Postly{% endblock %}
+
+{% block content %}
+<style>
+    .team-container {
+        display: grid;
+        grid-template-columns: 250px 1fr;
+        gap: 20px;
+        padding: 20px;
+    }
+    
+    .team-sidebar {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        height: fit-content;
+    }
+    
+    .team-main {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .team-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .team-nav-item {
+        padding: 12px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.2s;
+        text-decoration: none;
+        color: #333;
+        font-size: 14px;
+    }
+    
+    .team-nav-item:hover {
+        background: #e9ecef;
+    }
+    
+    .team-nav-item.active {
+        background: #0d6efd;
+        color: white;
+    }
+    
+    .team-list {
+        margin-bottom: 20px;
+    }
+    
+    .team-list-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #666;
+        margin-bottom: 8px;
+    }
+    
+    .team-item {
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-bottom: 4px;
+    }
+    
+    .team-item:hover {
+        background: #e9ecef;
+    }
+    
+    .members-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .members-table th {
+        background: #f8f9fa;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .members-table td {
+        padding: 12px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .members-table tr:hover {
+        background: #f8f9fa;
+    }
+    
+    .role-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .role-owner {
+        background: #ffc107;
+        color: #000;
+    }
+    
+    .role-admin {
+        background: #0dcaf0;
+        color: white;
+    }
+    
+    .role-member {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .member-actions {
+        display: flex;
+        gap: 8px;
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+    
+    .invite-section {
+        margin-bottom: 30px;
+        padding-bottom: 30px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .invite-btn {
+        background: #0d6efd;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 20px;
+    }
+    
+    .invite-btn:hover {
+        background: #0b5ed7;
+        text-decoration: none;
+        color: white;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+    
+    .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+        opacity: 0.5;
+    }
+    
+    .empty-state-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+    }
+    
+    @media (max-width: 768px) {
+        .team-container {
+            grid-template-columns: 1fr;
+        }
+        
+        .team-sidebar {
+            display: none;
+        }
+    }
+</style>
+
+{% if team %}
+<!-- Team Switcher for Multi-Organization Support -->
+{% if all_teams and all_teams|length > 1 %}
+<div style="background: #f0f2f5; padding: 15px 20px; margin-bottom: 20px; border-radius: 8px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+        <strong style="font-size: 14px;">🏢 Teams:</strong>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            {% for t in all_teams %}
+            {% if t.id == active_team_id %}
+            <span style="background: #0d6efd; color: white; padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 600;">
+                ⭐ {{ t.name }}
+            </span>
+            {% else %}
+            <a href="{{ url_for('team_dashboard', team_id=t.id) }}" 
+               style="background: white; color: #0d6efd; padding: 6px 12px; border: 1px solid #0d6efd; border-radius: 4px; font-size: 13px; text-decoration: none; cursor: pointer; transition: 0.2s;">
+                {{ t.name }}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="team-container">
+    <!-- Sidebar -->
+    <div class="team-sidebar">
+        <h4>{{ team.name }}</h4>
+        <div style="font-size: 12px; color: #666; margin-bottom: 20px;">{{ team.members|length + 1 }} members</div>
+        
+        <div class="team-nav">
+            <a href="{{ url_for('team_dashboard', team_id=team.id) }}" class="team-nav-item active">
+                <i class="fas fa-users"></i> Members
+            </a>
+            {% if is_admin %}
+            <a href="{{ url_for('team_invite', team_id=team.id) }}" class="team-nav-item">
+                <i class="fas fa-user-plus"></i> Invite Member
+            </a>
+            {% endif %}
+            {% if is_owner %}
+            <a href="{{ url_for('team_transfer_ownership', team_id=team.id) }}" class="team-nav-item">
+                <i class="fas fa-crown"></i> Transfer Ownership
+            </a>
+            <a href="{{ url_for('team_settings', team_id=team.id) }}" class="team-nav-item">
+                <i class="fas fa-cog"></i> Settings
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Main content -->
+    <div class="team-main">
+        <div class="invite-section">
+            <h2>Team Members</h2>
+            {% if is_admin %}
+            <a href="{{ url_for('team_invite', team_id=team.id) }}" class="invite-btn">
+                <i class="fas fa-user-plus"></i> Invite Member
+            </a>
+            {% endif %}
+        </div>
+        
+        {% if members %}
+        <table class="members-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Joined</th>
+                    {% if is_admin %}<th>Actions</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in members %}
+                <tr onclick="{% if member.is_owner %}#{% else %}window.location='#edit-member-{{ member.id }}'{% endif %}" style="cursor: {% if member.is_owner %}default{% else %}pointer{% endif %};">
+                    <td>
+                        <strong>{{ member.user.first_name or member.user.username }}</strong>
+                        {% if member.is_owner %}<span style="font-size: 11px; color: #666;">(Owner)</span>{% endif %}
+                    </td>
+                    <td>{{ member.email }}</td>
+                    <td>
+                        <span class="role-badge role-{{ member.role }}">
+                            {{ member.role|upper }}
+                        </span>
+                    </td>
+                    <td>{{ member.created_at.strftime('%b %d, %Y') }}</td>
+                    {% if is_admin and not member.is_owner %}
+                    <td>
+                        <div class="member-actions">
+                            <a href="{{ url_for('team_member_channels', team_id=team.id, member_id=member.member_obj.id) }}" 
+                               class="btn btn-sm btn-secondary">
+                                <i class="fas fa-link"></i> Access
+                            </a>
+                            {% if not member.is_owner %}
+                            <button onclick="if(confirm('Remove this member?')) { document.getElementById('delete-member-{{ member.member_obj.id }}').submit(); }" 
+                                    class="btn btn-sm btn-danger">
+                                <i class="fas fa-trash"></i> Remove
+                            </button>
+                            <form id="delete-member-{{ member.member_obj.id }}" 
+                                  action="{{ url_for('team_member_delete', team_id=team.id, member_id=member.member_obj.id) }}" 
+                                  method="POST" style="display: none;">
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-users"></i></div>
+            <div class="empty-state-title">No Team Members</div>
+            <p>Invite your first team member to get started.</p>
+        </div>
+        {% endif %}
+        
+        <!-- Pending Invitations -->
+        {% if pending_invites %}
+        <div style="margin-top: 40px; padding-top: 40px; border-top: 1px solid #dee2e6;">
+            <h3>Pending Invitations</h3>
+            <table class="members-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Invited</th>
+                        <th>Expires</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invite in pending_invites %}
+                    <tr>
+                        <td>{{ invite.invited_name }}</td>
+                        <td>{{ invite.invited_email }}</td>
+                        <td>
+                            <span class="role-badge role-{{ invite.role }}">
+                                {{ invite.role|upper }}
+                            </span>
+                        </td>
+                        <td>{{ invite.created_at.strftime('%b %d, %Y') }}</td>
+                        <td>{{ invite.expires_at.strftime('%b %d, %Y') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="fas fa-users"></i></div>
+    <div class="empty-state-title">No Team Found</div>
+    <p>Create or join a team to get started.</p>
+</div>
+{% endif %}
+{% endblock %}
