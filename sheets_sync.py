@@ -1,25 +1,43 @@
+"""
+Google Sheets Sync Module for Postly
+Syncs scheduled posts from Google Sheets to the Postly database
+"""
+
 import os
-from google.oauth2.credentials import Credentials
+import sys
+import re
+import random
+from datetime import datetime
+import pytz
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import pandas as pd
-from datetime import datetime
-import pytz
-import random
-from time import sleep
-import re
+
+# Import Flask app and database models
+from app import app, db, User, Post, PostMedia, PostPageAssociation, ConnectedPage
 
 # Content variations for randomization
-EMOJI_LIST = ["emoji1", "emoji2"]
+EMOJI_LIST = ["✨", "🎯", "💡", "🚀", "⭐", "🌟", "💫", "🎉"]
 INTRO_PHRASES = [
-    "intro1",
-    "intro2"
+    "Check this out!",
+    "Here's something exciting:",
+    "Don't miss this:",
+    "Quick update:",
+    "Attention:",
+    "Hey there!",
 ]
 CLOSING_PHRASES = [
-    "outro1",
-    "outro2"
+    "Let us know what you think!",
+    "Share your thoughts below!",
+    "What do you think?",
+    "Drop a comment!",
+    "Tell us in the comments!",
+    "We'd love to hear from you!",
 ]
+
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 def extract_google_drive_file_id(url):
     """Extract file ID from various Google Drive URL formats"""
@@ -52,20 +70,35 @@ def convert_google_drive_to_download_url(url):
 
 def randomize_content(message, campaign=None):
     """Add random variations to the message while preserving its core content"""
+    # Only add variations if message isn't too short
+    if len(message) < 10:
+        return message
+    
     # Add random emoji
     emoji = random.choice(EMOJI_LIST)
     
-    # Add random intro and closing phrases
-    intro = random.choice(INTRO_PHRASES)
-    closing = random.choice(CLOSING_PHRASES)
+    # Add random intro and closing phrases (only sometimes)
+    use_intro = random.random() > 0.5
+    use_closing = random.random() > 0.5
+    
+    intro = random.choice(INTRO_PHRASES) if use_intro else ""
+    closing = random.choice(CLOSING_PHRASES) if use_closing else ""
     
     # Add campaign hashtag if provided
-    campaign_tag = f"\n#{campaign}" if campaign and campaign.strip() else ""
+    campaign_tag = f"\n\n#{campaign.replace(' ', '')}" if campaign and campaign.strip() else ""
     
     # Construct the randomized message
-    randomized_message = f"{intro} {emoji}\n\n{message}\n\n{closing}{campaign_tag}"
+    parts = []
+    if intro:
+        parts.append(f"{intro} {emoji}")
+    parts.append(message)
+    if closing:
+        parts.append(closing)
+    if campaign_tag:
+        parts.append(campaign_tag)
     
-    return randomized_message
+    return "\n\n".join(parts)
+
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
@@ -202,7 +235,7 @@ def get_pending_posts(spreadsheet_id, sheet_name=None):
             # scheduled_time must be present and parseable
             sched_val = row.get('scheduled_time') if 'scheduled_time' in row.index else None
             if pd.isna(sched_val) or not str(sched_val).strip():
-                print(f"Skipping row {row.get('row_index', '?')}: missing scheduled_time")
+                print(f"[SHEETS] Skipping row {row.get('row_index', '?')}: missing scheduled_time")
                 continue
 
             # Parse scheduled time (assuming format: YYYY-MM-DD HH:MM)
@@ -230,32 +263,165 @@ def get_pending_posts(spreadsheet_id, sheet_name=None):
             original_message = row.get('message') if 'message' in row.index else ''
             campaign = row.get('campaign') if 'campaign' in row.index else None
             
-            # Create a list to store page-specific variations
-            page_specific_posts = []
-            
-            # Create unique variations for each page
-            for page_id in page_ids:
-                # Randomize the content for each page
-                randomized_message = randomize_content(original_message, campaign)
-                
-                # Create a separate post entry for each page with randomized content
-                page_specific_posts.append({
-                    'message': randomized_message,
-                    'page_ids': [page_id],  # Single page ID for this specific post
-                    'scheduled_time': scheduled_time,
-                    'media_urls': media_urls,
-                    'campaign': campaign,
-                    'row_index': row.get('row_index'),
-                    'author': row.get('author') if 'author' in row.index else None,
-                    'notes': row.get('notes') if 'notes' in row.index else None,
-                    'delay': random.randint(120, 600)  # Random delay between 2-10 minutes
-                })
-            
-            # Add all page-specific variations to pending posts
-            pending_posts.extend(page_specific_posts)
+            # Create a single post that will be published to all pages
+            # Each page will get a slightly randomized version during publishing
+            pending_posts.append({
+                'message': original_message,
+                'page_ids': page_ids,  # All page IDs for this post
+                'scheduled_time': scheduled_time,
+                'media_urls': media_urls,
+                'campaign': campaign,
+                'row_index': row.get('row_index'),
+                'author': row.get('author') if 'author' in row.index else None,
+                'notes': row.get('notes') if 'notes' in row.index else None,
+            })
 
         except (ValueError, AttributeError) as e:
-            print(f"Error parsing row {row.get('row_index', '?')}: {e}")
+            print(f"[SHEETS] Error parsing row {row.get('row_index', '?')}: {e}")
             continue
 
     return pending_posts
+
+
+def sync_posts_from_sheets(spreadsheet_id, user_id, sheet_name=None):
+    """
+    Sync pending posts from Google Sheets to Postly database
+    Returns: (success_count, error_count, errors_list)
+    """
+    with app.app_context():
+        pending_posts = get_pending_posts(spreadsheet_id, sheet_name)
+        
+        if not pending_posts:
+            print("[SHEETS] No pending posts to sync")
+            return 0, 0, []
+        
+        print(f"[SHEETS] Found {len(pending_posts)} pending post(s) to sync")
+        
+        success_count = 0
+        error_count = 0
+        errors = []
+        
+        # Get user
+        user = User.query.get(user_id)
+        if not user:
+            return 0, 0, [f"User {user_id} not found"]
+        
+        for post_data in pending_posts:
+            try:
+                # Get page IDs from the sheet
+                page_ids = post_data.get('page_ids', [])
+                if not page_ids:
+                    error_msg = f"Row {post_data.get('row_index')}: No pages specified"
+                    print(f"[SHEETS] {error_msg}")
+                    errors.append(error_msg)
+                    error_count += 1
+                    continue
+                
+                # Verify pages exist and user has access
+                valid_pages = []
+                for page_id_str in page_ids:
+                    try:
+                        page_id = int(page_id_str)
+                        page = ConnectedPage.query.get(page_id)
+                        if page and page.user_id == user_id and page.is_active:
+                            valid_pages.append(page)
+                        else:
+                            print(f"[SHEETS] Page {page_id} not found or not accessible for user {user_id}")
+                    except (ValueError, TypeError):
+                        print(f"[SHEETS] Invalid page ID: {page_id_str}")
+                
+                if not valid_pages:
+                    error_msg = f"Row {post_data.get('row_index')}: No valid pages found"
+                    print(f"[SHEETS] {error_msg}")
+                    errors.append(error_msg)
+                    error_count += 1
+                    continue
+                
+                # Create randomized content for this post
+                message = randomize_content(
+                    post_data.get('message', ''),
+                    post_data.get('campaign')
+                )
+                
+                # Convert scheduled time to UTC
+                scheduled_time_local = post_data.get('scheduled_time')
+                if scheduled_time_local.tzinfo:
+                    scheduled_time_utc = scheduled_time_local.astimezone(pytz.UTC).replace(tzinfo=None)
+                else:
+                    scheduled_time_utc = scheduled_time_local
+                
+                # Create Post
+                post = Post(
+                    user_id=user_id,
+                    content=message,
+                    caption=message,
+                    status='scheduled',
+                    scheduled_time=scheduled_time_utc,
+                    post_icon='fas fa-calendar'
+                )
+                db.session.add(post)
+                db.session.flush()  # Get post ID
+                
+                print(f"[SHEETS] Created post {post.id} for row {post_data.get('row_index')}")
+                
+                # Add media URLs
+                media_urls = post_data.get('media_urls', [])
+                for media_url in media_urls:
+                    # Convert Google Drive links to direct download URLs
+                    media_url = convert_google_drive_to_download_url(media_url)
+                    
+                    # Determine media type from URL
+                    media_type = 'image'
+                    if any(ext in media_url.lower() for ext in ['.mp4', '.mov', '.avi', '.mkv']):
+                        media_type = 'video'
+                    
+                    post_media = PostMedia(
+                        post_id=post.id,
+                        media_url=media_url,
+                        media_type=media_type
+                    )
+                    db.session.add(post_media)
+                
+                # Create associations with pages
+                for page in valid_pages:
+                    association = PostPageAssociation(
+                        post_id=post.id,
+                        page_id=page.id,
+                        status='pending'
+                    )
+                    db.session.add(association)
+                
+                db.session.commit()
+                
+                # Update sheet status to 'synced'
+                update_post_status(
+                    spreadsheet_id, 
+                    post_data.get('row_index'),
+                    'synced',
+                    post.id,
+                    sheet_name
+                )
+                
+                success_count += 1
+                print(f"[SHEETS] Successfully synced post {post.id} to {len(valid_pages)} page(s)")
+                
+            except Exception as e:
+                db.session.rollback()
+                error_msg = f"Row {post_data.get('row_index')}: {str(e)}"
+                print(f"[SHEETS] Error: {error_msg}")
+                errors.append(error_msg)
+                error_count += 1
+                
+                # Update sheet status to 'error'
+                try:
+                    update_post_status(
+                        spreadsheet_id,
+                        post_data.get('row_index'),
+                        f'error: {str(e)[:50]}',
+                        None,
+                        sheet_name
+                    )
+                except:
+                    pass
+        
+        return success_count, error_count, errors
