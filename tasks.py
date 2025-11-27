@@ -45,7 +45,7 @@ def _get_accessible_page_ids_subquery(user_id):
     ).subquery()
 
 
-def _build_posts_needing_refresh_query(user_id=None):
+def _build_posts_needing_refresh_query(user_id=None, page_id=None):
     """Shared base query for posts that require analytics refresh."""
     cooldown_cutoff = datetime.utcnow() - timedelta(hours=ANALYTICS_REFRESH_COOLDOWN_HOURS)
     query = PostPageAssociation.query.filter(
@@ -57,6 +57,9 @@ def _build_posts_needing_refresh_query(user_id=None):
         accessible_page_ids = _get_accessible_page_ids_subquery(user_id)
         if accessible_page_ids is not None:
             query = query.filter(PostPageAssociation.page_id.in_(accessible_page_ids))
+
+    if page_id:
+        query = query.filter(PostPageAssociation.page_id == page_id)
 
     query = query.outerjoin(
         PostAnalytics,
@@ -445,13 +448,14 @@ def fetch_tiktok_post_analytics(open_id, access_token, post_id, post_page_assoc_
     return _run_with_correct_app_context(_task)
 
 
-def refresh_all_post_analytics(user_id=None, limit=5):
+def refresh_all_post_analytics(user_id=None, limit=5, page_id=None):
     """
     Fetch analytics for published posts from connected pages
     
     Args:
         user_id: If provided, only refresh posts from pages accessible to this user
-        limit: Maximum number of posts to process (default 5 to avoid worker timeout)
+        limit: Maximum number of posts to process per batch (default 5 to avoid worker timeout)
+        page_id: Optional specific ConnectedPage ID to limit refresh scope
               Each post takes ~10-15s with 3 API calls, so 5 posts = ~50-75s max
     """
     def _task():
@@ -460,7 +464,7 @@ def refresh_all_post_analytics(user_id=None, limit=5):
             logger.info(f"Starting refresh_all_post_analytics task (user_id={user_id}, limit={limit})")
             
             # Build query for published posts with their page associations
-            query = _build_posts_needing_refresh_query(user_id).order_by(
+            query = _build_posts_needing_refresh_query(user_id, page_id).order_by(
                 PostAnalytics.last_updated.asc().nullsfirst(),
                 PostPageAssociation.id.desc()
             )
@@ -549,19 +553,20 @@ def refresh_all_post_analytics(user_id=None, limit=5):
     return _run_with_correct_app_context(_task)
 
 
-def count_posts_needing_refresh(user_id):
+def count_posts_needing_refresh(user_id, page_id=None):
     """
     Count how many posts need analytics refresh for a user
     
     Args:
         user_id: User ID to count posts for
+        page_id: Optional ConnectedPage ID to scope the query
     
     Returns:
         int: Number of posts that need refresh
     """
     def _task():
         try:
-            query = _build_posts_needing_refresh_query(user_id)
+            query = _build_posts_needing_refresh_query(user_id, page_id)
             return query.count()
         except Exception as e:
             logger.error(f"Error counting posts needing refresh: {e}")
