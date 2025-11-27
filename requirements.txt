@@ -13,4 +13,5 @@ google-api-python-client
 pandas
 pytz
 psycopg2-binary
-
+Werkzeug
+sendgrid
