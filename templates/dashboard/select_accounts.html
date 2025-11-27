@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+
+{% block body_class %}select-accounts-page{% endblock %}
+
+{% block title %}Select Accounts - Postly{% endblock %}
+
+{% block extra_css %}
+<style>
+    body.select-accounts-page {
+        background: #f4f5f7;
+    }
+
+    body.select-accounts-page main.py-4 {
+        padding: 0;
+        min-height: calc(100vh - var(--navbar-height));
+    }
+
+    .select-accounts-page .footer {
+        display: none;
+    }
+
+    .account-selection-wrapper {
+        width: 100%;
+        padding: 32px clamp(16px, 4vw, 64px) 56px;
+    }
+
+    .account-selection-shell {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: minmax(280px, 320px) minmax(360px, 1fr);
+        gap: 32px;
+        align-items: stretch;
+    }
+
+    .select-side-panel {
+        background: linear-gradient(135deg, #121c36, #1b73f1);
+        color: white;
+        border-radius: 24px;
+        padding: 32px;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .select-side-panel h2 {
+        font-size: 1.75rem;
+        margin: 0;
+        color: white;
+    }
+
+    .panel-platform-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.15);
+        font-weight: 600;
+        font-size: 0.875rem;
+        width: fit-content;
+    }
+
+    .panel-bullets {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .panel-bullet {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.95rem;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .panel-bullet i {
+        color: #8ef0ff;
+    }
+
+    .select-main-panel {
+        background: white;
+        border-radius: 24px;
+        border: 1px solid var(--border-gray);
+        box-shadow: var(--shadow-md);
+        padding: 32px;
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+    }
+
+    .selection-header {
+        margin-bottom: 16px;
+    }
+
+    .selection-eyebrow {
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+        color: var(--medium-gray);
+        margin-bottom: 6px;
+    }
+
+    .selection-header h1 {
+        font-size: 1.75rem;
+        margin: 0;
+    }
+
+    .selection-subtext {
+        color: var(--medium-gray);
+        margin-top: 6px;
+        font-size: 0.95rem;
+    }
+
+    .selection-info {
+        display: flex;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: #f0f7ff;
+        border: 1px solid rgba(27, 115, 241, 0.2);
+        margin-bottom: 24px;
+        font-size: 0.95rem;
+        color: #1a2b49;
+    }
+
+    .selection-info i {
+        color: #1b73f1;
+    }
+
+    .account-form {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+    }
+
+    .accounts-scroll-region {
+        flex: 1;
+        overflow-y: auto;
+        padding-right: 6px;
+        margin-right: -6px;
+        max-height: min(60vh, 520px);
+    }
+
+    .accounts-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .account-item {
+        display: grid;
+        grid-template-columns: 32px 48px 1fr auto;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 18px;
+        border: 1px solid var(--border-gray);
+        border-radius: 16px;
+        background: var(--white);
+        cursor: pointer;
+        transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .account-item:hover {
+        border-color: var(--primary-blue);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .account-item.selected {
+        border-color: var(--primary-blue);
+        background: #f4f8ff;
+        box-shadow: 0 6px 18px rgba(34, 73, 255, 0.12);
+    }
+
+    .account-item.is-connected {
+        cursor: not-allowed;
+        opacity: 0.9;
+        background: #f5f5f5;
+    }
+
+    .account-checkbox-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .account-checkbox-input {
+        appearance: none;
+        width: 22px;
+        height: 22px;
+        border: 2px solid #ced3de;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        position: relative;
+        transition: all 0.2s ease;
+    }
+
+    .account-checkbox-input::after {
+        content: '\2713';
+        color: white;
+        font-size: 0.9rem;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+    }
+
+    .account-checkbox-input:checked {
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+    }
+
+    .account-checkbox-input:checked::after {
+        opacity: 1;
+    }
+
+    .account-checkbox-input:disabled {
+        border-color: #ccd1dd;
+        background: #e4e7ef;
+    }
+
+    .account-checkbox-input:focus-visible {
+        outline: 2px solid rgba(44, 75, 255, 0.4);
+        outline-offset: 2px;
+    }
+
+    .account-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: #edf0f7;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: var(--primary-blue);
+        overflow: hidden;
+    }
+
+    .account-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .account-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .account-name {
+        font-weight: 600;
+        color: #111827;
+    }
+
+    .account-username {
+        font-size: 0.85rem;
+        color: #6b7280;
+    }
+
+    .account-status {
+        justify-self: end;
+    }
+
+    .account-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-weight: 600;
+    }
+
+    .account-status-pill.connected {
+        background: rgba(24, 135, 84, 0.1);
+        color: #1d7c50;
+    }
+
+    .account-status-pill.available {
+        background: rgba(44, 75, 255, 0.12);
+        color: var(--primary-blue);
+    }
+
+    .selection-footer {
+        margin-top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .selected-count {
+        font-size: 0.95rem;
+        color: #6b7280;
+        text-align: center;
+        min-height: 22px;
+    }
+
+    .selected-count.active {
+        color: var(--primary-blue);
+        font-weight: 600;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+    }
+
+    .form-actions .btn-primary,
+    .form-actions .btn-secondary {
+        flex: 1;
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-size: 1rem;
+        font-weight: 600;
+        border: none;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .form-actions .btn-primary {
+        background: var(--primary-blue);
+        color: white;
+        box-shadow: 0 6px 18px rgba(44, 75, 255, 0.25);
+    }
+
+    .form-actions .btn-primary:disabled {
+        background: #c7ccda;
+        box-shadow: none;
+        cursor: not-allowed;
+    }
+
+    .form-actions .btn-primary:not(:disabled):hover {
+        transform: translateY(-1px);
+    }
+
+    .form-actions .btn-secondary {
+        background: #f3f4f6;
+        color: #111827;
+        border: 1px solid var(--border-gray);
+    }
+
+    .form-actions .btn-secondary:hover {
+        transform: translateY(-1px);
+        border-color: #cfd3dc;
+    }
+
+    @media (max-width: 992px) {
+        .account-selection-shell {
+            grid-template-columns: 1fr;
+        }
+
+        .accounts-scroll-region {
+            max-height: none;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .select-main-panel,
+        .select-side-panel {
+            padding: 24px;
+        }
+
+        .account-item {
+            grid-template-columns: 32px 48px 1fr;
+            grid-template-rows: auto auto;
+            row-gap: 12px;
+        }
+
+        .account-checkbox-cell {
+            grid-row: span 2;
+            align-self: flex-start;
+        }
+
+        .account-avatar {
+            grid-column: 2 / 3;
+            grid-row: 1 / span 2;
+        }
+
+        .account-info {
+            grid-column: 3 / 4;
+        }
+
+        .account-status {
+            grid-column: 1 / -1;
+            justify-self: flex-start;
+        }
+
+        .form-actions {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if platform == 'facebook' %}
+    {% set platform_label = 'Facebook' %}
+    {% set platform_icon = 'fab fa-facebook' %}
+{% elif platform == 'instagram' %}
+    {% set platform_label = 'Instagram' %}
+    {% set platform_icon = 'fab fa-instagram' %}
+{% elif platform == 'tiktok' %}
+    {% set platform_label = 'TikTok' %}
+    {% set platform_icon = 'fab fa-tiktok' %}
+{% else %}
+    {% set platform_label = platform.title() %}
+    {% set platform_icon = 'fas fa-share-alt' %}
+{% endif %}
+
+<div class="account-selection-wrapper">
+    <div class="account-selection-shell">
+        <section class="select-side-panel">
+            <div class="panel-platform-badge">
+                <i class="{{ platform_icon }}"></i>
+                <span>{{ platform_label }}</span>
+            </div>
+            <h2>Connect your {{ platform_label }} accounts</h2>
+            <p>Postly pulls your latest {{ platform_label }} data so you can publish, monitor, and report from one place.</p>
+            <ul class="panel-bullets">
+                <li class="panel-bullet"><i class="fas fa-check"></i> Unlimited channel connections for your workspace</li>
+                <li class="panel-bullet"><i class="fas fa-check"></i> Auto-sync recent posts for analytics</li>
+                <li class="panel-bullet"><i class="fas fa-check"></i> Manage access in Team settings anytime</li>
+            </ul>
+        </section>
+
+        <section class="select-main-panel">
+            <div class="selection-header">
+                <div class="selection-eyebrow">Step 2 · Choose channels</div>
+                <h1>Select accounts to bring into Postly</h1>
+                <p class="selection-subtext">Click anywhere on a tile to toggle it. Connected channels stay locked so you never duplicate them.</p>
+            </div>
+
+            <div class="selection-info">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <strong>Heads up:</strong> You can disconnect or reconnect channels anytime from Publish &gt; Connected Pages.
+                </div>
+            </div>
+
+            <form method="POST" id="accountForm" class="account-form">
+                <div class="accounts-scroll-region">
+                    <ul class="accounts-list" id="accountsList">
+                        {% for page in pages %}
+                            {% set avatar_url = page.avatar_url %}
+                            {% if not avatar_url and page.picture and page.picture.data and page.picture.data.url %}
+                                {% set avatar_url = page.picture.data.url %}
+                            {% endif %}
+                            {% set is_connected = page.is_connected %}
+                            <li class="account-item {% if is_connected %}is-connected{% endif %}"
+                                data-connected="{{ 'true' if is_connected else 'false' }}"
+                                onclick="toggleAccount(event, this)"
+                                onkeydown="handleAccountKeydown(event, this)"
+                                tabindex="0">
+                                <div class="account-checkbox-cell">
+                                    <input type="checkbox"
+                                           name="selected_pages"
+                                           value="{{ page.id }}"
+                                           id="page-{{ loop.index }}"
+                                           class="account-checkbox-input"
+                                           {% if is_connected %}checked disabled{% endif %}>
+                                </div>
+                                <div class="account-avatar">
+                                    {% if avatar_url %}
+                                        <img src="{{ avatar_url }}" alt="{{ page.name }} avatar" loading="lazy">
+                                    {% else %}
+                                        <span>{{ page.name[:1].upper() if page.name else 'P' }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="account-info">
+                                    <div class="account-name">{{ page.name }}</div>
+                                    <div class="account-username">
+                                        {% if page.username %}
+                                            @{{ page.username }}
+                                        {% else %}
+                                            ID: {{ page.id }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="account-status">
+                                    {% if is_connected %}
+                                        <span class="account-status-pill connected"><i class="fas fa-link"></i> Connected</span>
+                                    {% else %}
+                                        <span class="account-status-pill available"><i class="fas fa-plus-circle"></i> Ready</span>
+                                    {% endif %}
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="selection-footer">
+                    <div class="selected-count" id="selectedCount">Select at least one new account to continue.</div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="window.history.back()">Back</button>
+                        <button type="submit" class="btn-primary" id="submitBtn" disabled>Add account(s)</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleAccount(event, element) {
+        if (!element) {
+            return;
+        }
+        const checkbox = element.querySelector('.account-checkbox-input');
+        if (!checkbox || checkbox.disabled) {
+            return;
+        }
+        if (event && event.target === checkbox) {
+            element.classList.toggle('selected', checkbox.checked);
+            updateSelectedCount();
+            return;
+        }
+        checkbox.checked = !checkbox.checked;
+        element.classList.toggle('selected', checkbox.checked);
+        updateSelectedCount();
+    }
+
+    function handleAccountKeydown(event, element) {
+        if (!element) {
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleAccount(event, element);
+        }
+    }
+
+    function updateSelectedCount() {
+        const selected = document.querySelectorAll('.account-checkbox-input:checked:not(:disabled)');
+        const submitBtn = document.getElementById('submitBtn');
+        const countDisplay = document.getElementById('selectedCount');
+        if (!submitBtn || !countDisplay) {
+            return;
+        }
+        submitBtn.disabled = selected.length === 0;
+        if (selected.length > 0) {
+            countDisplay.textContent = `${selected.length} account${selected.length === 1 ? '' : 's'} ready to connect`;
+            countDisplay.classList.add('active');
+        } else {
+            countDisplay.textContent = 'Select at least one new account to continue.';
+            countDisplay.classList.remove('active');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const items = document.querySelectorAll('.account-item');
+        items.forEach(item => {
+            const checkbox = item.querySelector('.account-checkbox-input');
+            if (!checkbox) {
+                return;
+            }
+            if (checkbox.checked && !checkbox.disabled) {
+                item.classList.add('selected');
+            }
+            checkbox.addEventListener('change', () => {
+                if (!checkbox.disabled) {
+                    item.classList.toggle('selected', checkbox.checked);
+                }
+                updateSelectedCount();
+            });
+        });
+
+        const form = document.getElementById('accountForm');
+        if (form) {
+            form.addEventListener('submit', event => {
+                const activeSelections = document.querySelectorAll('.account-checkbox-input:checked:not(:disabled)');
+                if (activeSelections.length === 0) {
+                    event.preventDefault();
+                    alert('Please select at least one new account before continuing.');
+                }
+            });
+        }
+
+        updateSelectedCount();
+    });
+</script>
+{% endblock %}

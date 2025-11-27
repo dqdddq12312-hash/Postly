@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Log In - Postly{% endblock %}
+
+{% block body_class %}auth-page publish-auth{% endblock %}
+
+{% block content %}
+<div class="auth-shell">
+    <div class="auth-panel auth-panel-copy fade-in">
+        <span class="auth-chip">Publish-ready workspace</span>
+        <h1>Log in without the clutter</h1>
+        <p>Pick up where you left off with the same calm gradient from the Publish page. Keep approvals, drafts, and analytics aligned.</p>
+        <ul class="auth-benefits">
+            <li>Unified calendar and approvals</li>
+            <li>Smart safeguards against duplicate posts</li>
+            <li>Instant analytics recaps</li>
+        </ul>
+        <div class="auth-highlight">
+            <span>Next publish window</span>
+            <strong>Today • 09:30</strong>
+        </div>
+    </div>
+    <div class="auth-panel auth-panel-form">
+        <div class="auth-card fade-in">
+            <div class="auth-header">
+                <h2>Welcome back</h2>
+                <p>Log in to continue scheduling with Postly</p>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'danger' else 'warning' if category == 'warning' else 'info' if category == 'info' else 'success' }}" role="alert">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+                <div class="form-group">
+                    <label for="email_or_username" class="form-label">Email or Username</label>
+                    <input type="text" class="form-control" id="email_or_username" name="email_or_username" required autofocus>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary auth-submit">Log In</button>
+            </form>
+            
+            <div class="divider">
+                <span>or</span>
+            </div>
+            
+            <p class="auth-footer-note">
+                Don't have an account? <a href="{{ url_for('signup') }}">Sign up for free</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

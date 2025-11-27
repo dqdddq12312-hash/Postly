@@ -1,0 +1,457 @@
+{#
+    TikTok demo hub template used solely for the reviewer walkthrough. Every
+    section mirrors one TikTok for Developers product (Login Kit, Display API,
+    Share Kit, Content Posting API) so the UI matches the narration script.
+#}
+{% extends "base.html" %}
+{% block title %}TikTok Demo Hub{% endblock %}
+
+{% block extra_css %}
+<style>
+    .demo-header {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        margin-bottom: 24px;
+    }
+
+    .product-pill {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: #f5f7ff;
+        border: 1px solid #dfe3ff;
+        min-width: 200px;
+    }
+
+    .product-pill i {
+        font-size: 18px;
+        color: #111430;
+    }
+
+    .product-pill span {
+        font-weight: 600;
+        margin-top: 4px;
+        color: #111430;
+    }
+
+    .product-pill small {
+        color: #6b7280;
+        font-size: 12px;
+    }
+
+    .demo-section {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .demo-section h2 {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 12px;
+        color: #0f172a;
+    }
+
+    .demo-subtitle {
+        color: #6b7280;
+        font-size: 14px;
+    }
+
+    .accounts-list, .share-media-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 12px;
+    }
+
+    .account-card, .media-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .account-card strong, .media-card strong {
+        font-size: 15px;
+        color: #111827;
+    }
+
+    .account-meta {
+        font-size: 12px;
+        color: #6b7280;
+    }
+
+    .demo-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+    }
+
+    .post-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fafafa;
+    }
+
+    .post-card img {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+    }
+
+    .post-card .post-body {
+        padding: 12px;
+    }
+
+    .badge-scope {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid #e5e7eb;
+        margin: 4px;
+        font-size: 13px;
+    }
+
+    .scope-ready {
+        background: #ecfdf5;
+        border-color: #bbf7d0;
+        color: #065f46;
+    }
+
+    .scope-missing {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+    }
+
+    .steps-list {
+        list-style: decimal;
+        padding-left: 18px;
+    }
+
+    .steps-list li {
+        margin-bottom: 8px;
+        color: #374151;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="demo-header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <h1 class="h3 mb-2">TikTok Integration Demo Hub</h1>
+                <p class="text-muted mb-0">Use this page while recording the TikTok review video. Each section maps directly to a TikTok for Developers product so the reviewer can see Login Kit, Display API, Share Kit, and Content Posting API in action on the ngrok domain.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                {% for product in product_cards %}
+                <div class="product-pill">
+                    <i class="fas {{ product.icon }}"></i>
+                    <span>{{ product.name }}</span>
+                    <small>{{ product.description }}</small>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <section class="demo-section" id="loginKitSection">
+        <h2><i class="fab fa-tiktok text-dark"></i> Login Kit</h2>
+        <p class="demo-subtitle">Start recording here to prove the OAuth redirect domain (<code id="redirectHostLabel"></code>) and PKCE-based Login Kit flow.</p>
+        <div class="d-flex align-items-center gap-3 flex-wrap mt-3">
+            <button class="btn btn-primary" id="connectTikTokBtn">
+                <i class="fas fa-link"></i> Connect TikTok (Login Kit)
+            </button>
+            <span class="badge bg-secondary" id="loginStatusBadge">No TikTok account connected</span>
+        </div>
+        <div class="accounts-list" id="tiktokAccountList"></div>
+    </section>
+
+    <section class="demo-section" id="displayApiSection">
+        <h2><i class="fas fa-film"></i> Display API</h2>
+        <p class="demo-subtitle">After Login Kit succeeds, select a TikTok account to pull videos via <code>video.list</code>.</p>
+        <div class="row g-3 align-items-center">
+            <div class="col-md-4">
+                <label for="displayAccountSelect" class="form-label text-muted">Pick TikTok account</label>
+                <select id="displayAccountSelect" class="form-select">
+                    <option value="">Connect TikTok first</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-secondary w-100" id="refreshDisplayBtn">
+                    <i class="fas fa-sync"></i> Fetch videos
+                </button>
+            </div>
+        </div>
+        <div class="demo-grid mt-4" id="displayPostsGrid"></div>
+        <div class="text-muted small" id="displayEmptyState">No videos yet. Fetch after selecting an account.</div>
+    </section>
+
+    <section class="demo-section" id="shareKitSection">
+        <h2><i class="fas fa-share-from-square"></i> Share Kit</h2>
+        <p class="demo-subtitle">Choose a Postly video asset and trigger the Share Kit action. We open TikToks upload surface (desktop creative kit) with the Postly media URL so the reviewer can see the share flow end-to-end.</p>
+        <div class="share-media-list" id="shareMediaList">
+            <div class="text-muted small">No media found yet. Create or upload a video via Publish to populate this list.</div>
+        </div>
+    </section>
+
+    <section class="demo-section" id="contentPostingSection">
+        <h2><i class="fas fa-upload"></i> Content Posting API</h2>
+        <p class="demo-subtitle">Use this step while recording to show how Postly schedules and publishes directly to TikTok using the Content Posting API.</p>
+        <ul class="steps-list">
+            <li>Click <strong>Open Publish Workspace</strong> to create a TikTok-only post with a short caption and MP4 upload.</li>
+            <li>Choose <em>Post Now</em> to hit the Content Posting API immediately. The response banner reports success/failure per channel.</li>
+            <li>Return to this hub and re-fetch the Display API list to show the newly published video.</li>
+        </ul>
+        <button class="btn btn-success" id="openPublishBtn">
+            <i class="fas fa-external-link-alt"></i> Open Publish Workspace
+        </button>
+        <div class="alert alert-warning mt-3 mb-0" role="alert" id="publishCapabilityAlert" style="display: none;">
+            TikTok hasnt granted <code>video.upload</code>/<code>video.publish</code> yet, so the Content Posting API will stay disabled until those scopes are approved.
+        </div>
+    </section>
+
+    <section class="demo-section" id="scopeSection">
+        <h2><i class="fas fa-key"></i> Scope Checklist</h2>
+        <p class="demo-subtitle">Show this panel in the video so the reviewer sees every requested scope and why its needed.</p>
+        <div id="scopeBadgeContainer"></div>
+        <div class="mt-3 text-muted small">
+            Redirect domain: <strong id="scopeRedirectHost"></strong><br>
+            Current scope string: <code id="scopeStringLabel"></code>
+        </div>
+    </section>
+
+    <section class="demo-section" id="recordingTipsSection">
+        <h2><i class="fas fa-video"></i> Recording Tips</h2>
+        <ol class="steps-list">
+            <li>Start screen recording and browse to <strong>/tiktok/demo</strong> on the ngrok HTTPS domain.</li>
+            <li>Use the Login Kit section to reconnect TikTok so the redirect, state, and consent dialog are visible.</li>
+            <li>Demonstrate Display API by fetching the video list and opening at least one permalink in a new tab.</li>
+            <li>Trigger a Share Kit action; keep the TikTok upload tab in the recording to prove the domain hand-off.</li>
+            <li>Create and publish a TikTok post from the Publish workspace, then show the resulting success toast plus the new video inside Display API.</li>
+            <li>End the recording by scrolling through the scope checklist so each selected product + scope is clearly captured.</li>
+        </ol>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const scopeString = {{ scope_string|tojson }};
+    const redirectHost = {{ redirect_host|tojson }};
+    const connectUrl = {{ connect_url|tojson }};
+    const publishUrl = {{ publish_url|tojson }};
+    const canPublish = {{ can_publish|tojson }};
+
+    const accountSelect = document.getElementById('displayAccountSelect');
+    const accountList = document.getElementById('tiktokAccountList');
+    const loginStatusBadge = document.getElementById('loginStatusBadge');
+    const displayGrid = document.getElementById('displayPostsGrid');
+    const displayEmpty = document.getElementById('displayEmptyState');
+    const shareMediaList = document.getElementById('shareMediaList');
+    const publishAlert = document.getElementById('publishCapabilityAlert');
+
+    document.getElementById('redirectHostLabel').textContent = redirectHost || 'Not configured';
+    document.getElementById('scopeRedirectHost').textContent = redirectHost || 'Not configured';
+    document.getElementById('scopeStringLabel').textContent = scopeString || 'N/A';
+
+    document.getElementById('connectTikTokBtn').addEventListener('click', () => {
+        window.location.href = connectUrl;
+    });
+
+    document.getElementById('refreshDisplayBtn').addEventListener('click', () => {
+        const pageId = accountSelect.value;
+        if (pageId) {
+            loadDisplayPosts(pageId);
+        }
+    });
+
+    document.getElementById('openPublishBtn').addEventListener('click', () => {
+        window.open(publishUrl, '_blank');
+    });
+
+    if (!canPublish) {
+        publishAlert.style.display = 'block';
+    }
+
+    // Render badge chips summarizing requested scopes so reviewers can verify
+    // Postly only asks for the sandbox-safe list.
+    function renderScopes() {
+        const container = document.getElementById('scopeBadgeContainer');
+        container.innerHTML = '';
+        (scopeString || '').split(',').map(scope => scope.trim()).filter(Boolean).forEach(scope => {
+            const badge = document.createElement('span');
+            badge.className = 'badge-scope ' + (scope.includes('video.upload') || scope.includes('video.publish') ? (canPublish ? 'scope-ready' : 'scope-missing') : 'scope-ready');
+            badge.innerHTML = `<i class="fas fa-check"></i>${scope}`;
+            container.appendChild(badge);
+        });
+    }
+
+    // Backend returns every TikTok channel the current user can target
+    // (personal + team) so the Display API dropdown stays in sync.
+    async function loadStatus() {
+        const res = await fetch('/api/tiktok/demo/status');
+        const data = await res.json();
+        renderAccounts(data.pages || []);
+    }
+
+    function renderAccounts(pages) {
+        accountList.innerHTML = '';
+        accountSelect.innerHTML = '';
+
+        if (!pages.length) {
+            accountList.innerHTML = '<div class="text-muted">No TikTok channels connected yet.</div>';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Connect TikTok first';
+            accountSelect.appendChild(placeholder);
+            loginStatusBadge.textContent = 'Not connected';
+            loginStatusBadge.className = 'badge bg-secondary';
+            return;
+        }
+
+        loginStatusBadge.textContent = 'Connected';
+        loginStatusBadge.className = 'badge bg-success';
+
+        const frag = document.createDocumentFragment();
+        pages.forEach(page => {
+            const card = document.createElement('div');
+            card.className = 'account-card';
+            card.innerHTML = `
+                <div>
+                    <strong>${page.page_name}</strong>
+                    <div class="account-meta">Open ID: ${page.platform_page_id} · Access: ${page.access_level}</div>
+                </div>
+                <span class="badge bg-light text-dark">ID ${page.id}</span>
+            `;
+            frag.appendChild(card);
+
+            const option = document.createElement('option');
+            option.value = page.id;
+            option.textContent = page.page_name;
+            accountSelect.appendChild(option);
+        });
+        accountList.appendChild(frag);
+    }
+
+    // Fetch latest TikTok videos for the selected account via the demo API.
+    async function loadDisplayPosts(pageId) {
+        displayGrid.innerHTML = '';
+        displayEmpty.style.display = 'block';
+        const res = await fetch(`/api/tiktok/demo/pages/${pageId}/posts`);
+        const data = await res.json();
+        if (!data.success || !(data.videos || []).length) {
+            displayEmpty.textContent = data.error || 'No videos returned';
+            return;
+        }
+        displayEmpty.style.display = 'none';
+        const frag = document.createDocumentFragment();
+        data.videos.forEach(video => {
+            const card = document.createElement('div');
+            card.className = 'post-card';
+            const cover = video.cover || 'https://placehold.co/600x600?text=TikTok';
+            card.innerHTML = `
+                <img src="${cover}" alt="TikTok video cover" />
+                <div class="post-body">
+                    <strong>${video.description || 'Untitled video'}</strong>
+                    <div class="text-muted small">Video ID: ${video.id || 'unknown'}</div>
+                    ${video.permalink ? `<a href="${video.permalink}" target="_blank" class="btn btn-link p-0">Open on TikTok ↗</a>` : ''}
+                </div>
+            `;
+            frag.appendChild(card);
+        });
+        displayGrid.appendChild(frag);
+    }
+
+    // Merge Postly-hosted TikTok uploads with imported history so reviewers
+    // always have assets to showcase in the Share Kit step.
+    async function loadLocalMedia() {
+        const res = await fetch('/api/tiktok/demo/local-media');
+        const data = await res.json();
+        shareMediaList.innerHTML = '';
+        if (!data.media || !data.media.length) {
+            shareMediaList.innerHTML = '<div class="text-muted small">No TikTok videos detected yet. Connect TikTok or upload a video via Publish.</div>';
+            return;
+        }
+
+        data.media.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'media-card';
+
+            const info = document.createElement('div');
+            const sourceLabel = item.is_historical ? 'Imported from TikTok history' : 'Uploaded via Postly';
+            const pageLabel = item.page_name ? ` · ${item.page_name}` : '';
+            info.innerHTML = `
+                <strong>${item.caption || 'Untitled video'}</strong>
+                <div class="account-meta">${sourceLabel}${pageLabel}</div>
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = 'd-flex flex-column align-items-end gap-1';
+
+            if (item.permalink) {
+                const viewLink = document.createElement('a');
+                viewLink.href = item.permalink;
+                viewLink.target = '_blank';
+                viewLink.rel = 'noopener';
+                viewLink.className = 'btn btn-link p-0 small text-decoration-none';
+                viewLink.textContent = 'Open on TikTok ↗';
+                actions.appendChild(viewLink);
+            }
+
+            if (item.is_historical) {
+                const disabledBtn = document.createElement('button');
+                disabledBtn.className = 'btn btn-outline-secondary btn-sm';
+                disabledBtn.disabled = true;
+                disabledBtn.innerHTML = '<i class="fas fa-lock"></i> Share Kit unavailable';
+                disabledBtn.title = 'TikTok only allows Share Kit from media hosted on Postly.';
+                actions.appendChild(disabledBtn);
+            } else {
+                const shareBtn = document.createElement('button');
+                shareBtn.className = 'btn btn-outline-primary btn-sm';
+                shareBtn.innerHTML = '<i class="fas fa-share"></i> Share via Share Kit';
+                shareBtn.addEventListener('click', () => triggerShareKit(item));
+                actions.appendChild(shareBtn);
+            }
+
+            card.appendChild(info);
+            card.appendChild(actions);
+            shareMediaList.appendChild(card);
+        });
+    }
+
+    // Turn a media row into TikTok's official Share Kit URL and pop it in a
+    // new tab so the reviewer can see the desktop upload UI.
+    async function triggerShareKit(media) {
+        const res = await fetch('/api/tiktok/demo/share-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_url: media.media_url, caption: media.caption })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            alert(data.error || 'Unable to generate Share Kit link');
+            return;
+        }
+        window.open(data.share_url, '_blank');
+    }
+
+    renderScopes();
+    loadStatus();
+    loadLocalMedia();
+</script>
+{% endblock %}

@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Select Accounts - Postly Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .account-selection-container {
+        max-width: 700px;
+        margin: 60px auto;
+    }
+
+    .selection-card {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 40px;
+    }
+
+    .selection-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .selection-header h2 {
+        font-size: 28px;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+
+    .selection-header p {
+        color: #666;
+        font-size: 16px;
+    }
+
+    .platform-icon {
+        font-size: 24px;
+        margin-right: 10px;
+    }
+
+    .accounts-list {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 30px 0;
+    }
+
+    .account-item {
+        display: flex;
+        align-items: center;
+        padding: 16px 14px;
+        border: 2px solid #e0e0e0;
+        border-radius: 6px;
+        margin-bottom: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        background-color: white;
+    }
+
+    .account-item:hover {
+        border-color: #007bff;
+        background-color: #f9f9f9;
+    }
+
+    .account-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 14px;
+        cursor: pointer;
+    }
+
+    .account-item input[type="checkbox"]:checked + .account-info {
+        color: #007bff;
+    }
+
+    .account-item.selected {
+        border-color: #007bff;
+        background-color: #f0f7ff;
+    }
+
+    .account-info {
+        flex: 1;
+    }
+
+    .account-name {
+        font-weight: 600;
+        font-size: 15px;
+        color: #333;
+    }
+
+    .account-username {
+        font-size: 13px;
+        color: #999;
+        margin-top: 4px;
+    }
+
+    .account-profile {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: #007bff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        flex-shrink: 0;
+    }
+
+    .account-profile img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border-radius: 6px;
+        border: none;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-primary {
+        background-color: #007bff;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #0056b3;
+    }
+
+    .btn-primary:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+    }
+
+    .btn-secondary {
+        background-color: #f0f0f0;
+        color: #333;
+    }
+
+    .btn-secondary:hover {
+        background-color: #e0e0e0;
+    }
+
+    .selection-info {
+        background-color: #e7f3ff;
+        border-left: 4px solid #007bff;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+        color: #004085;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="account-selection-container">
+    <div class="selection-card">
+        <div class="selection-header">
+            <h2>
+                <span class="platform-icon">
+                    {% if platform == 'facebook' %}📘{% elif platform == 'instagram' %}📷{% else %}🎵{% endif %}
+                </span>
+                Select Accounts
+            </h2>
+            <p>Choose which accounts to add to your team</p>
+        </div>
+
+        <div class="selection-info">
+            <strong>Team context:</strong> All selected accounts will be added to the team and accessible to all team members based on their permissions.
+        </div>
+
+        <form method="POST" onsubmit="handleSubmit(event)">
+            <ul class="accounts-list">
+                {% for page in pages %}
+                <li class="account-item" onclick="toggleCheckbox(event, this)">
+                    <input 
+                        type="checkbox" 
+                        name="selected_pages" 
+                        value="{{ page.id }}"
+                        onchange="updateSelection(this)"
+                    >
+                    <div class="account-profile">
+                        {% if page.picture and page.picture.data and page.picture.data.url %}
+                            <img src="{{ page.picture.data.url }}" alt="{{ page.name }}">
+                        {% else %}
+                            {{ page.name[0].upper() }}
+                        {% endif %}
+                    </div>
+                    <div class="account-info">
+                        <div class="account-name">{{ page.name }}</div>
+                        {% if page.username %}
+                        <div class="account-username">@{{ page.username }}</div>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+
+            <div class="button-group">
+                <a href="{{ url_for('team_dashboard') }}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                    Add Selected Accounts
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function toggleCheckbox(event, listItem) {
+        // Don't toggle if clicking on the checkbox itself
+        if (event.target.type === 'checkbox') {
+            return;
+        }
+        
+        const checkbox = listItem.querySelector('input[type="checkbox"]');
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event('change'));
+    }
+
+    function updateSelection(checkbox) {
+        const listItem = checkbox.closest('.account-item');
+        if (checkbox.checked) {
+            listItem.classList.add('selected');
+        } else {
+            listItem.classList.remove('selected');
+        }
+        
+        // Enable/disable submit button
+        const selectedCount = document.querySelectorAll('input[name="selected_pages"]:checked').length;
+        document.getElementById('submitBtn').disabled = selectedCount === 0;
+    }
+
+    function handleSubmit(event) {
+        const selectedCount = document.querySelectorAll('input[name="selected_pages"]:checked').length;
+        if (selectedCount === 0) {
+            event.preventDefault();
+            alert('Please select at least one account');
+        }
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        const checkboxes = document.querySelectorAll('input[name="selected_pages"]');
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                checkbox.closest('.account-item').classList.add('selected');
+            }
+        });
+    });
+</script>
+{% endblock %}

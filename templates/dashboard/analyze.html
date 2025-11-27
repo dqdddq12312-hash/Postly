@@ -1,0 +1,1987 @@
+{% extends "base.html" %}
+
+{% block body_class %}analyze-page{% endblock %}
+
+{% block title %}Analyze - Postly Analytics Dashboard{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/analyze.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="analyze-container">
+    <span class="analyze-orb orb-one"></span>
+    <span class="analyze-orb orb-two"></span>
+    <div class="analyze-main-content">
+        <div class="analyze-shell">
+            <aside class="analyze-sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Page filter</div>
+                    <div class="filter-card is-hidden" id="pageFilterGroup">
+                        <div class="page-selector is-hidden" id="pageSelectorContainer">
+                            <select class="page-dropdown" id="pageSelector" onchange="selectPage()">
+                                <option value="">All Pages</option>
+                            </select>
+                        </div>
+                        <p class="sidebar-hint">Pick a connected page to focus analytics.</p>
+                    </div>
+                    <p class="sidebar-empty" id="pageFilterEmpty">Connect a page to enable filtering.</p>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Date range</div>
+                    <div class="date-chip-stack">
+                        <button class="date-range-btn {% if request.args.get('days', '30') == '7' %}active{% endif %}" data-range="7" onclick="selectDateRange(7, this)">Last 7 days</button>
+                        <button class="date-range-btn {% if request.args.get('days', '30') in ['30', None] %}active{% endif %}" data-range="30" onclick="selectDateRange(30, this)">Last 30 days</button>
+                        <button class="date-range-btn {% if request.args.get('days', '30') == '90' %}active{% endif %}" data-range="90" onclick="selectDateRange(90, this)">Last 90 days</button>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="analyze-main">
+                <!-- Header -->
+                <header class="analyze-hero">
+                    <div class="hero-text">
+                        <p class="hero-eyebrow">Analytics</p>
+                        <h1 class="hero-title">Performance overview</h1>
+                        <p class="hero-subtext">Review reach, engagement, and post health across the last {{ selected_days }} days.</p>
+                        <div class="hero-meta">
+                            <div class="last-updated" id="lastUpdated">
+                                <i class="fas fa-clock"></i>
+                                <span>Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hero-actions">
+                        <div class="refresh-group">
+                            <button class="refresh-btn" id="refreshAnalyticsBtn" onclick="refreshAnalytics(true)" title="Refresh next 5 posts">
+                                <i class="fas fa-sync-alt"></i>
+                                <span id="refreshBtnText">Refresh Metrics</span>
+                            </button>
+                            <button class="refresh-btn refresh-btn-accent" id="refreshAllBtn" onclick="refreshAllPosts()" title="Auto-refresh all posts in batches">
+                                <i class="fas fa-bolt"></i>
+                                <span>Refresh All</span>
+                            </button>
+                        </div>
+                        <div class="refresh-progress" id="refreshProgress" hidden>
+                            <i class="fas fa-spinner fa-spin refresh-progress-icon"></i>
+                            <span id="progressText">Processing...</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Tabs -->
+                <div class="analyze-tabs">
+                    <button class="analyze-tab active" data-tab="overview" onclick="switchTab('overview')">
+                        <span>Overview</span>
+                    </button>
+                    <button class="analyze-tab" data-tab="posts" onclick="switchTab('posts')">
+                        <span>Posts</span>
+                    </button>
+                </div>
+        
+            <!-- Snapshot Summary -->
+            <section class="analyze-summary-bar">
+            <div class="summary-item">
+                <span class="summary-icon"><i class="fas fa-calendar"></i></span>
+                <div>
+                    <div class="summary-label">Date Range</div>
+                    <div class="summary-value">Last {{ selected_days }} days</div>
+                </div>
+            </div>
+            <div class="summary-item">
+                <span class="summary-icon"><i class="fas fa-file-alt"></i></span>
+                <div>
+                    <div class="summary-label">Posts Shown</div>
+                    <div class="summary-value">{{ total_posts_count }} posts</div>
+                </div>
+            </div>
+            {% if total_posts_count >= per_page %}
+            <div class="summary-hint">
+                <i class="fas fa-info-circle"></i>
+                Showing {{ per_page }} posts per page
+            </div>
+            {% endif %}
+            </section>
+
+            <!-- Content -->
+            <div class="analyze-content">
+            <!-- Overview Tab -->
+            <div class="tab-content active" id="overview">
+                <div id="overviewContent">
+                    <!-- Key Metrics Overview -->
+                    <div class="metrics-overview">
+                        <div class="metric-summary-card">
+                            <div class="metric-summary-label">Total Reach</div>
+                            <div class="metric-summary-value" id="totalReach">0</div>
+                            <div class="metric-summary-subtext" id="reachChange">Unique people</div>
+                        </div>
+                        <div class="metric-summary-card">
+                            <div class="metric-summary-label">Engagement</div>
+                            <div class="metric-summary-value" id="avgEngagement">0%</div>
+                            <div class="metric-summary-subtext" id="engagementChange">Average rate</div>
+                        </div>
+                        <div class="metric-summary-card">
+                            <div class="metric-summary-label">Clicks</div>
+                            <div class="metric-summary-value" id="totalClicks">0</div>
+                            <div class="metric-summary-subtext" id="clicksChange">Link clicks</div>
+                        </div>
+                        <div class="metric-summary-card">
+                            <div class="metric-summary-label">Video Views</div>
+                            <div class="metric-summary-value" id="totalVideoViews">0</div>
+                            <div class="metric-summary-subtext" id="videoPostsCount">No videos</div>
+                        </div>
+                    </div>
+
+                    <!-- PAGE LEVEL ANALYTICS (From broad to specific) -->
+                    
+                    <!-- Page-Level Analytics -->
+                    <div class="panel-pair">
+                        <section class="analyze-card">
+                            <div class="panel-header">
+                                <div>
+                                    <h3 class="panel-title">Platform Performance</h3>
+                                    <p class="panel-subtitle">Engagement distribution across platforms</p>
+                                </div>
+                            </div>
+                            <canvas id="platformPerformanceChart" style="max-height: 260px;"></canvas>
+                        </section>
+
+                        <section class="analyze-card" id="pageComparisonSection">
+                            <div class="panel-header">
+                                <div>
+                                    <h3 class="panel-title">Page Performance Comparison</h3>
+                                    <p class="panel-subtitle">Compare engagement and reach across your pages</p>
+                                </div>
+                            </div>
+                            <canvas id="pageComparisonChart" style="max-height: 300px;"></canvas>
+                        </section>
+                    </div>
+
+                    <div class="panel-pair">
+                        <section class="analyze-card">
+                            <div class="panel-header">
+                                <div>
+                                    <h3 class="panel-title">Page Insights</h3>
+                                    <p class="panel-subtitle">Top performing pages ranked by engagement</p>
+                                </div>
+                            </div>
+                            <div id="pageInsightsList" class="page-insights-grid">
+                                <div class="panel-placeholder">No page data available</div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- POST LEVEL ANALYTICS -->
+                    
+                    <!-- Post Performance Charts Grid -->
+                    <div class="panel-grid">
+                        <!-- Engagement Rate Trend -->
+                        <section class="analyze-card">
+                            <div class="panel-header">
+                                <div>
+                                    <h3 class="panel-title">Engagement Trend</h3>
+                                    <p class="panel-subtitle">Post engagement over time</p>
+                                </div>
+                            </div>
+                            <canvas id="engagementTrendChart" style="max-height: 260px;"></canvas>
+                        </section>
+
+                        <!-- Reach Distribution -->
+                        <section class="analyze-card">
+                            <div class="panel-header">
+                                <div>
+                                    <h3 class="panel-title">Reach by Post</h3>
+                                    <p class="panel-subtitle">People reached per post</p>
+                                </div>
+                            </div>
+                            <canvas id="reachDistributionChart" style="max-height: 260px;"></canvas>
+                        </section>
+                    </div>
+
+                    <!-- Top Performing Posts -->
+                    <section class="analyze-card">
+                        <div class="panel-header">
+                            <div>
+                                <h3 class="panel-title">Top Performing Posts</h3>
+                                <p class="panel-subtitle">Highest engagement posts</p>
+                            </div>
+                        </div>
+                        <div id="topPostsList" class="top-posts-list">
+                            <div class="panel-placeholder">No posts data available</div>
+                        </div>
+                    </section>
+
+                    <!-- Video Performance (shown only if video posts exist) -->
+                    <section class="analyze-card" id="videoPerformanceSection" style="display: none;">
+                        <div class="panel-header">
+                            <div>
+                                <h3 class="panel-title">Video Performance</h3>
+                                <p class="panel-subtitle">Video views and reach</p>
+                            </div>
+                        </div>
+                        <canvas id="videoPerformanceChart" style="max-height: 260px;"></canvas>
+                    </section>
+
+                    <div class="analyze-empty-state" id="emptyStateOverview" style="display: none;">
+                        <div class="analyze-empty-icon">📊</div>
+                        <p class="analyze-empty-text">No data available</p>
+                        <p class="analyze-empty-subtext">Connect a page and publish posts to see analytics</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Posts Tab -->
+            <div class="tab-content" id="posts">
+                <div id="postsContent">
+                    <div class="analyze-empty-state">
+                        <div class="analyze-empty-icon">📝</div>
+                        <p class="analyze-empty-text">No posts yet</p>
+                        <p class="analyze-empty-subtext">Publish posts to see detailed analytics</p>
+                    </div>
+                </div>
+                
+            </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Post Detail Modal - Buffer Style -->
+<div class="post-detail-modal" id="postDetailModal">
+    <div class="post-detail-modal-content">
+        <!-- Modal Header -->
+        <div class="modal-header">
+            <h2>Post details</h2>
+            <button class="modal-close" onclick="closePostDetail()">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Modal Body with Two-Column Layout -->
+        <div class="modal-body">
+            <!-- Left Sidebar -->
+            <div class="modal-sidebar">
+                <!-- Post Media -->
+                <div class="post-media" id="postMediaContainer">
+                    <div class="media-placeholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <path d="M21 15l-5-5L5 21"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Post Info -->
+                <div class="post-info-section">
+                    <div class="info-label">Posted on</div>
+                    <div class="info-value" id="postDetailDate"></div>
+                </div>
+
+                <div class="post-info-section">
+                    <div class="info-label">Channels</div>
+                    <div class="info-channels" id="postDetailPages"></div>
+                </div>
+
+                <div class="post-info-section">
+                    <div class="info-label">Caption</div>
+                    <div class="info-caption" id="postDetailCaption"></div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="modal-main">
+                <!-- Performance Overview -->
+                <div class="metrics-section">
+                    <h3 class="section-title">Performance</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-label">Impressions</div>
+                            <div class="metric-value" id="detailImpressions">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Reach</div>
+                            <div class="metric-value" id="detailReach">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Clicks</div>
+                            <div class="metric-value" id="detailClicks">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Engagement Rate</div>
+                            <div class="metric-value" id="detailEngagementRate">0%</div>
+                        </div>
+                    </div>
+                    <div class="metrics-grid" id="detailVideoMetrics" style="margin-top: 12px; display: none;">
+                        <div class="metric-card">
+                            <div class="metric-label">Video Views</div>
+                            <div class="metric-value" id="detailVideoViews">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Engagement Breakdown -->
+                <div class="metrics-section">
+                    <h3 class="section-title">Engagement</h3>
+                    <div class="engagement-grid">
+                        <div class="engagement-item">
+                            <div class="engagement-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                </svg>
+                            </div>
+                            <div class="engagement-data">
+                                <div class="engagement-value" id="detailLikes">0</div>
+                                <div class="engagement-label">Likes</div>
+                            </div>
+                        </div>
+                        <div class="engagement-item">
+                            <div class="engagement-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                            </div>
+                            <div class="engagement-data">
+                                <div class="engagement-value" id="detailComments">0</div>
+                                <div class="engagement-label">Comments</div>
+                            </div>
+                        </div>
+                        <div class="engagement-item">
+                            <div class="engagement-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                            </div>
+                            <div class="engagement-data">
+                                <div class="engagement-value" id="detailShares">0</div>
+                                <div class="engagement-label">Shares</div>
+                            </div>
+                        </div>
+                        <div class="engagement-item">
+                            <div class="engagement-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                            </div>
+                            <div class="engagement-data">
+                                <div class="engagement-value" id="detailSaves">0</div>
+                                <div class="engagement-label">Saves</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Build flat list of all pages from pages_by_platform
+    let allPages = [];
+    {% if pages_by_platform %}
+        {% for platform, pages in pages_by_platform.items() %}
+            {% for page in pages %}
+                allPages.push({
+                    id: {{ page.id }},
+                    page_name: '{{ page.page_name | replace("'", "\\'") }}',
+                    platform: '{{ page.platform }}'
+                });
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+    
+    let allPosts = {{ user_posts | tojson | safe }};
+    let selectedPage = null;
+    let selectedDateRange = {{ request.args.get('days', 30) }};  // Get from URL parameter (Buffer-style)
+    let cachedSummary = null;  // Buffer-style Tier 1 cached data
+    let lastUpdatedTime = null;
+
+    // Debug: Log the data structure
+    console.log('All pages:', allPages);
+    console.log('All posts:', allPosts);
+
+    // Initialize with Buffer's 3-tier approach
+    document.addEventListener('DOMContentLoaded', function() {
+        // TIER 1: Load cached summary first (fastest - Buffer style)
+        loadCachedSummary();
+        
+        // Show loading state for other sections
+        showLoadingState();
+        
+        // TIER 2: Load analytics with requestIdleCallback (non-blocking)
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => {
+                populatePageSelector();
+                loadAnalytics();  // This loads the detailed post data
+                hideLoadingState();
+            });
+        } else {
+            setTimeout(() => {
+                populatePageSelector();
+                loadAnalytics();
+                hideLoadingState();
+            }, 0);
+        }
+    });
+    
+    // Buffer-style Tier 1: Fast cached summary load
+    async function loadCachedSummary() {
+        try {
+            const response = await fetch(`/api/analytics-summary?days=${selectedDateRange}`);
+            const data = await response.json();
+            
+            if (data.success && data.cached) {
+                cachedSummary = data.summary;
+                lastUpdatedTime = data.last_updated;
+                
+                // Update summary cards immediately with cached data
+                document.getElementById('totalReach').textContent = cachedSummary.total_reach.toLocaleString();
+                document.getElementById('avgEngagement').textContent = cachedSummary.avg_engagement_rate.toFixed(1) + '%';
+                document.getElementById('totalClicks').textContent = cachedSummary.total_clicks.toLocaleString();
+                document.getElementById('totalVideoViews').textContent = cachedSummary.total_video_views.toLocaleString();
+                
+                // Update last updated timestamp
+                updateLastUpdatedDisplay();
+            }
+        } catch (error) {
+            console.log('No cached summary available, using fresh data');
+        }
+    }
+    
+    // Update "Last updated" display (Buffer-style)
+    function updateLastUpdatedDisplay() {
+        const lastUpdatedEl = document.getElementById('lastUpdated');
+        if (lastUpdatedTime) {
+            const updatedDate = new Date(lastUpdatedTime);
+            const now = new Date();
+            const diffMs = now - updatedDate;
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            
+            let timeText = '';
+            if (diffHours >= 24) {
+                const diffDays = Math.floor(diffHours / 24);
+                timeText = `Updated ${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+            } else if (diffHours >= 1) {
+                timeText = `Updated ${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            } else if (diffMins >= 1) {
+                timeText = `Updated ${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+            } else {
+                timeText = 'Updated just now';
+            }
+            
+            lastUpdatedEl.innerHTML = `<i class=\"fas fa-clock\"></i><span>${timeText}</span>`;
+        } else {
+            lastUpdatedEl.innerHTML = '<i class=\"fas fa-sync-alt fa-spin\"></i><span>Loading...</span>';
+        }
+    }
+    
+    function showLoadingState() {
+        // Add loading indicators to metric cards
+        document.querySelectorAll('.metric-summary-card').forEach(card => {
+            card.style.opacity = '0.6';
+        });
+    }
+    
+    function hideLoadingState() {
+        // Remove loading indicators
+        document.querySelectorAll('.metric-summary-card').forEach(card => {
+            card.style.opacity = '1';
+        });
+    }
+
+    function populatePageSelector() {
+        const pageSelector = document.getElementById('pageSelector');
+        const pageContainer = document.getElementById('pageSelectorContainer');
+        const pageFilterGroup = document.getElementById('pageFilterGroup');
+        const pageFilterEmpty = document.getElementById('pageFilterEmpty');
+        
+        if (allPages && allPages.length > 0) {
+            pageContainer.classList.remove('is-hidden');
+            if (pageFilterGroup) {
+                pageFilterGroup.classList.remove('is-hidden');
+            }
+            if (pageFilterEmpty) {
+                pageFilterEmpty.style.display = 'none';
+            }
+            pageSelector.innerHTML = '<option value="">All Pages</option>';
+            allPages.forEach(page => {
+                const option = document.createElement('option');
+                option.value = page.id;
+                const icon = page.platform === 'instagram' ? '📷' : page.platform === 'tiktok' ? '🎵' : '📘';
+                option.textContent = `${icon} ${page.page_name}`;
+                pageSelector.appendChild(option);
+            });
+        } else {
+            pageContainer.classList.add('is-hidden');
+            if (pageFilterGroup) {
+                pageFilterGroup.classList.add('is-hidden');
+            }
+            if (pageFilterEmpty) {
+                pageFilterEmpty.style.display = '';
+            }
+        }
+    }
+
+    function selectPage() {
+        selectedPage = document.getElementById('pageSelector').value || null;
+        loadAnalytics();
+        
+        // Update page comparison charts based on selected page
+        const pageMetricsData = {{ page_metrics | tojson | safe }} || [];
+        const platformMetricsData = {{ platform_metrics | tojson | safe }} || [];
+        
+        if (selectedPage) {
+            // Filter to show only selected page
+            const filteredPageMetrics = pageMetricsData.filter(p => p.page_id == selectedPage);
+            const selectedPageData = pageMetricsData.find(p => p.page_id == selectedPage);
+            
+            if (selectedPageData) {
+                // Update platform metrics for selected page only
+                const filteredPlatformMetrics = [{
+                    platform: selectedPageData.platform,
+                    total_posts: selectedPageData.total_posts,
+                    total_reach: selectedPageData.total_reach,
+                    total_engagement: selectedPageData.total_engagement,
+                    total_clicks: selectedPageData.total_clicks,
+                    page_count: 1,
+                    avg_engagement_rate: selectedPageData.avg_engagement_rate
+                }];
+                
+                renderPageComparisonChart(filteredPageMetrics);
+                renderPlatformPerformanceChart(filteredPlatformMetrics);
+                renderPageInsights(filteredPageMetrics);
+                renderRecommendations(filteredPageMetrics, filteredPlatformMetrics);
+            }
+        } else {
+            // Show all pages
+            renderPageComparisonChart(pageMetricsData);
+            renderPlatformPerformanceChart(platformMetricsData);
+            renderPageInsights(pageMetricsData);
+            renderRecommendations(pageMetricsData, platformMetricsData);
+        }
+    }
+
+    function selectDateRange(days, button) {
+        selectedDateRange = days;
+        document.querySelectorAll('.date-range-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        button.classList.add('active');
+        
+        // Buffer-style: Reload page with date filter parameter
+        const url = new URL(window.location);
+        url.searchParams.set('days', days);
+        window.location.href = url.toString();
+    }
+
+    let isRefreshing = false;
+    let autoRefreshActive = false;
+    let refreshSessionTotal = null;
+    let refreshSessionProcessed = 0;
+
+    function resetRefreshSession() {
+        refreshSessionTotal = null;
+        refreshSessionProcessed = 0;
+    }
+
+    function refreshAnalytics(resetSession = false) {
+        if (isRefreshing) return;
+
+        if (resetSession) {
+            resetRefreshSession();
+        }
+        
+        // Get the refresh button
+        const refreshBtn = document.getElementById('refreshAnalyticsBtn');
+        const refreshAllBtn = document.getElementById('refreshAllBtn');
+        const refreshBtnText = document.getElementById('refreshBtnText');
+        const progressDiv = document.getElementById('refreshProgress');
+        const progressText = document.getElementById('progressText');
+        
+        isRefreshing = true;
+        
+        // Show loading state
+        refreshBtn.classList.add('loading');
+        refreshBtn.disabled = true;
+        refreshAllBtn.disabled = true;
+        progressDiv.hidden = false;
+        progressText.textContent = 'Refreshing posts...';
+        
+        // Make the API call
+        fetch('/api/refresh-analytics', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            isRefreshing = false;
+            
+            // Remove loading state
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+            refreshAllBtn.disabled = false;
+            
+            if (data.success) {
+                const batchProcessed = data.processed ?? data.success_count ?? 0;
+                const serverTotal = typeof data.total_posts === 'number' ? data.total_posts : null;
+                const serverRemaining = typeof data.remaining === 'number' ? data.remaining : null;
+
+                if (refreshSessionTotal === null) {
+                    if (serverTotal !== null) {
+                        refreshSessionTotal = serverTotal;
+                    } else if (serverRemaining !== null) {
+                        refreshSessionTotal = batchProcessed + serverRemaining;
+                    } else {
+                        refreshSessionTotal = batchProcessed;
+                    }
+                }
+
+                refreshSessionProcessed += batchProcessed;
+
+                const totalForDisplay = refreshSessionTotal ?? refreshSessionProcessed;
+                let remainingForDisplay = Math.max(0, totalForDisplay - refreshSessionProcessed);
+                if (typeof remainingForDisplay !== 'number' || Number.isNaN(remainingForDisplay)) {
+                    remainingForDisplay = 0;
+                }
+                if (serverRemaining !== null) {
+                    remainingForDisplay = serverRemaining;
+                }
+
+                const hasMore = typeof data.has_more === 'boolean' ? data.has_more : remainingForDisplay > 0;
+
+                if (batchProcessed === 0 && hasMore) {
+                    progressText.innerHTML = '<strong>No posts were processed in the last batch.</strong> Please verify your connected pages or try again later.';
+                    refreshBtnText.textContent = 'Refresh Metrics';
+                    autoRefreshActive = false;
+                    return;
+                }
+
+                if (remainingForDisplay > 0 && hasMore) {
+                    progressText.innerHTML = `<strong>Refreshed ${refreshSessionProcessed}/${totalForDisplay} posts</strong> - ${remainingForDisplay} remaining. <a href="#" onclick="refreshAnalytics(); return false;" class="refresh-progress-link">Continue</a>`;
+                    refreshBtnText.textContent = `Continue (${remainingForDisplay} left)`;
+                    
+                    if (autoRefreshActive) {
+                        setTimeout(() => refreshAnalytics(), 1000);
+                    }
+                } else {
+                    const completedCount = refreshSessionProcessed;
+                    progressText.innerHTML = `<i class="fas fa-check-circle text-success"></i><strong>Complete!</strong> Refreshed ${completedCount} posts`;
+                    refreshBtnText.textContent = 'Refresh Metrics';
+                    autoRefreshActive = false;
+                    resetRefreshSession();
+                    
+                    setTimeout(() => window.location.reload(), 2000);
+                }
+            } else {
+                progressDiv.hidden = true;
+                alert('Error: ' + (data.error || 'Failed to refresh analytics'));
+            }
+        })
+        .catch(error => {
+            isRefreshing = false;
+            autoRefreshActive = false;
+            
+            // Remove loading state
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+            refreshAllBtn.disabled = false;
+            progressDiv.hidden = true;
+            
+            console.error('Error:', error);
+            alert('Error refreshing analytics: ' + error.message);
+        });
+    }
+
+    function refreshAllPosts() {
+        if (isRefreshing || autoRefreshActive) return;
+        
+        if (!confirm('This will automatically refresh all posts in batches. This may take several minutes. Continue?')) {
+            return;
+        }
+        
+        autoRefreshActive = true;
+        refreshAnalytics(true);
+    }
+
+    function stopAutoRefresh() {
+        autoRefreshActive = false;
+        const progressText = document.getElementById('progressText');
+        const refreshBtnText = document.getElementById('refreshBtnText');
+        progressText.innerHTML += ' <span style="color: #d93025;">(Stopped)</span>';
+        refreshBtnText.textContent = 'Refresh Metrics';
+        resetRefreshSession();
+    }
+
+    function switchTab(tabName) {
+        // Update button states
+        document.querySelectorAll('.analyze-tab').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const targetButton = document.querySelector(`.analyze-tab[data-tab="${tabName}"]`);
+        if (targetButton) {
+            targetButton.classList.add('active');
+        }
+
+        // Update content display
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(tabName).classList.add('active');
+    }
+
+    function loadAnalytics() {
+        const overviewContent = document.getElementById('overviewContent');
+        const postsContent = document.getElementById('postsContent');
+
+        // Get posts for selected page (or all if no page selected)
+        const filteredPosts = getFilteredPosts();
+        
+        console.log('Filtered posts:', filteredPosts);
+        console.log('Number of filtered posts:', filteredPosts.length);
+
+        if (filteredPosts.length === 0) {
+            overviewContent.innerHTML = `
+                <div class="analyze-empty-state">
+                    <div class="analyze-empty-icon">📊</div>
+                    <p class="analyze-empty-text">No data available</p>
+                    <p class="analyze-empty-subtext">Publish posts to see analytics</p>
+                </div>
+            `;
+            postsContent.innerHTML = `
+                <div class="analyze-empty-state">
+                    <div class="analyze-empty-icon">📝</div>
+                    <p class="analyze-empty-text">No posts yet</p>
+                    <p class="analyze-empty-subtext">Publish posts to see detailed analytics</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Calculate metrics
+        const metrics = calculateMetrics(filteredPosts);
+        renderOverview(metrics, filteredPosts);
+        renderPostDetails(filteredPosts);
+    }
+
+    function getPostAnalyticsForPage(post) {
+        // Get analytics for the post filtered by selected page
+        if (!post.pages) return null;
+        
+        // If a specific page is selected, find that page's analytics
+        if (selectedPage) {
+            const matchingPage = post.pages.find(p => p.page_id == selectedPage);
+            return matchingPage ? matchingPage.analytics : null;
+        }
+        
+        // If no specific page selected, aggregate all analytics for this post
+        // Use the first page's analytics as representative
+        return post.pages.length > 0 ? post.pages[0].analytics : null;
+    }
+
+    function getFilteredPosts() {
+        // If no page selected, show all posts
+        if (!selectedPage) {
+            return allPosts.map(post => ({
+                ...post,
+                analytics: getPostAnalyticsForPage(post) || {
+                    impressions: 0,
+                    reach: 0,
+                    clicks: 0,
+                    likes: 0,
+                    comments: 0,
+                    shares: 0,
+                    saves: 0
+                }
+            }));
+        }
+
+        // Filter posts that were published to the selected page
+        return allPosts.filter(post => {
+            if (!post.pages) return false;
+            return post.pages.some(p => p.page_id == selectedPage);
+        }).map(post => {
+            // Get analytics for this post on the selected page
+            const analytics = getPostAnalyticsForPage(post) || {
+                impressions: 0,
+                reach: 0,
+                clicks: 0,
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                saves: 0
+            };
+            
+            return {
+                ...post,
+                analytics: analytics
+            };
+        });
+    }
+
+    function calculateMetrics(posts) {
+        const totalPosts = posts.length;
+        
+        // Use reduce for better performance - single pass through array
+        const metrics = posts.reduce((acc, post) => {
+            const analytics = post.analytics;
+            if (analytics) {
+                acc.totalImpressions += analytics.impressions || 0;
+                acc.totalReach += analytics.reach || 0;
+                const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0);
+                acc.totalEngagement += engagement;
+                acc.totalClicks += analytics.clicks || 0;
+                acc.totalVideoViews += analytics.video_views || 0;
+            }
+            return acc;
+        }, {
+            totalImpressions: 0,
+            totalReach: 0,
+            totalEngagement: 0,
+            totalClicks: 0,
+            totalVideoViews: 0
+        });
+
+        const avgEngagementPerPost = totalPosts > 0 ? (metrics.totalEngagement / totalPosts).toFixed(0) : 0;
+
+        return {
+            totalPosts,
+            ...metrics,
+            avgEngagementPerPost
+        };
+    }
+
+    function renderOverview(metrics, posts) {
+        // Calculate totals and averages
+        let totalReach = 0;
+        let totalClicks = 0;
+        let totalVideoViews = 0;
+        let videoPostCount = 0;
+        let totalEngagementRate = 0;
+        let postsWithEngagement = 0;
+
+        posts.forEach(post => {
+            const analytics = post.analytics;
+            if (analytics) {
+                totalReach += analytics.reach || 0;
+                totalClicks += analytics.clicks || 0;
+                
+                if (analytics.video_views && analytics.video_views > 0) {
+                    totalVideoViews += analytics.video_views;
+                    videoPostCount++;
+                }
+                
+                // Calculate engagement rate for this post
+                if (analytics.reach > 0) {
+                    const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.clicks || 0);
+                    const rate = (engagement / analytics.reach) * 100;
+                    totalEngagementRate += rate;
+                    postsWithEngagement++;
+                }
+            }
+        });
+
+        const avgEngagementRate = postsWithEngagement > 0 ? (totalEngagementRate / postsWithEngagement).toFixed(2) : 0;
+
+        // Update summary cards
+        document.getElementById('totalReach').textContent = totalReach.toLocaleString();
+        document.getElementById('avgEngagement').textContent = avgEngagementRate + '%';
+        document.getElementById('totalClicks').textContent = totalClicks.toLocaleString();
+        document.getElementById('totalVideoViews').textContent = totalVideoViews.toLocaleString();
+        document.getElementById('videoPostsCount').textContent = videoPostCount > 0 ? `${videoPostCount} video post(s)` : 'No video posts';
+
+        // Render charts
+        renderEngagementTrendChart(posts);
+        renderReachDistributionChart(posts);
+        renderTopPerformingPosts(posts);
+        
+        // Render new page comparison charts
+        const pageMetricsData = {{ page_metrics | tojson | safe }} || [];
+        const platformMetricsData = {{ platform_metrics | tojson | safe }} || [];
+        
+        renderPageComparisonChart(pageMetricsData);
+        renderPlatformPerformanceChart(platformMetricsData);
+        renderPageInsights(pageMetricsData);
+        renderRecommendations(pageMetricsData, platformMetricsData);
+        
+        // Show video performance if we have video posts
+        if (videoPostCount > 0) {
+            document.getElementById('videoPerformanceSection').style.display = 'block';
+            renderVideoPerformanceChart(posts);
+        } else {
+            document.getElementById('videoPerformanceSection').style.display = 'none';
+        }
+
+        // Hide empty state
+        document.getElementById('emptyStateOverview').style.display = 'none';
+    }
+
+    // Store chart instances to destroy them before recreating
+    let chartInstances = {};
+
+    function renderEngagementTrendChart(posts) {
+        // Destroy existing chart
+        if (chartInstances.engagementTrend) {
+            chartInstances.engagementTrend.destroy();
+        }
+
+        // Sort posts by date
+        const sortedPosts = posts.slice().sort((a, b) => {
+            const dateA = new Date(a.scheduled_time || a.sent_time);
+            const dateB = new Date(b.scheduled_time || b.sent_time);
+            return dateA - dateB;
+        });
+
+        // Prepare data
+        const labels = sortedPosts.map(post => {
+            const date = new Date(post.scheduled_time || post.sent_time);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const engagementRates = sortedPosts.map(post => {
+            const analytics = post.analytics;
+            if (!analytics || analytics.reach === 0) return 0;
+            const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.clicks || 0);
+            return ((engagement / analytics.reach) * 100).toFixed(2);
+        });
+
+        const ctx = document.getElementById('engagementTrendChart').getContext('2d');
+        chartInstances.engagementTrend = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Engagement Rate',
+                    data: engagementRates,
+                    borderColor: '#2c4bff',
+                    backgroundColor: 'rgba(44, 75, 255, 0.06)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: '#2c4bff',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 1.5,
+                    pointHoverBackgroundColor: '#2c4bff',
+                    pointHoverBorderColor: '#ffffff',
+                    pointHoverBorderWidth: 2,
+                    borderWidth: 1.5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false,
+                        titleFont: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        callbacks: {
+                            label: function(context) {
+                                return context.parsed.y.toFixed(1) + '%';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0,0,0,0.04)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            },
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false,
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 11,
+                                weight: '500'
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+    }
+
+    function renderReachDistributionChart(posts) {
+        // Destroy existing chart
+        if (chartInstances.reachDistribution) {
+            chartInstances.reachDistribution.destroy();
+        }
+
+        // Sort posts by date
+        const sortedPosts = posts.slice().sort((a, b) => {
+            const dateA = new Date(a.scheduled_time || a.sent_time);
+            const dateB = new Date(b.scheduled_time || b.sent_time);
+            return dateA - dateB;
+        });
+
+        // Prepare data
+        const labels = sortedPosts.map(post => {
+            const date = new Date(post.scheduled_time || post.sent_time);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const reachData = sortedPosts.map(post => post.analytics.reach || 0);
+
+        const ctx = document.getElementById('reachDistributionChart').getContext('2d');
+        chartInstances.reachDistribution = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Reach',
+                    data: reachData,
+                    backgroundColor: 'rgba(44, 75, 255, 0.75)',
+                    borderColor: '#2c4bff',
+                    borderWidth: 0,
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false,
+                        titleFont: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        callbacks: {
+                            label: function(context) {
+                                return context.parsed.y.toLocaleString() + ' people';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0,0,0,0.04)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            },
+                            callback: function(value) {
+                                return value.toLocaleString();
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false,
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderTopPerformingPosts(posts) {
+        // Calculate engagement rate for each post and sort
+        const postsWithRate = posts.map(post => {
+            const analytics = post.analytics;
+            let engagementRate = 0;
+            if (analytics && analytics.reach > 0) {
+                const engagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.clicks || 0);
+                engagementRate = (engagement / analytics.reach) * 100;
+            }
+            return {
+                ...post,
+                engagementRate: engagementRate
+            };
+        }).sort((a, b) => b.engagementRate - a.engagementRate).slice(0, 5); // Top 5
+
+        const container = document.getElementById('topPostsList');
+        if (postsWithRate.length === 0) {
+            container.innerHTML = '<div class="panel-placeholder">No posts data available</div>';
+            return;
+        }
+
+        const html = postsWithRate.map((post, index) => {
+            const analytics = post.analytics;
+            const caption = (post.caption || post.content || 'No caption').replace(/^Posted on\\s+/i, '');
+            const displayCaption = caption.length > 80 ? caption.substring(0, 80) + '...' : caption;
+            const date = new Date(post.scheduled_time || post.sent_time);
+            const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const rankNum = index + 1;
+            const rankClass = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-default';
+            const engagementRate = post.engagementRate ? post.engagementRate.toFixed(1) : '0.0';
+
+            return `
+                <div class="top-post-card" onclick="showPostDetail(${post.id})">
+                    <div class="top-post-rank ${rankClass}">${rankNum}</div>
+                    <div class="top-post-details">
+                        <div class="top-post-title">${displayCaption}</div>
+                        <div class="top-post-date">${dateStr}</div>
+                    </div>
+                    <div class="top-post-metrics">
+                        <div class="top-post-metric">
+                            <div class="top-post-rate">${engagementRate}%</div>
+                            <div class="label">Engage</div>
+                        </div>
+                        <div class="top-post-metric">
+                            <div class="value">${(analytics.reach || 0).toLocaleString()}</div>
+                            <div class="label">Reach</div>
+                        </div>
+                        <div class="top-post-metric">
+                            <div class="value">${(analytics.likes || 0).toLocaleString()}</div>
+                            <div class="label">Likes</div>
+                        </div>
+                        <div class="top-post-metric">
+                            <div class="value">${(analytics.comments || 0).toLocaleString()}</div>
+                            <div class="label">Comments</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+    }
+
+    function renderVideoPerformanceChart(posts) {
+        // Destroy existing chart
+        if (chartInstances.videoPerformance) {
+            chartInstances.videoPerformance.destroy();
+        }
+
+        // Filter posts with video views
+        const videoPosts = posts.filter(post => post.analytics.video_views && post.analytics.video_views > 0)
+            .sort((a, b) => {
+                const dateA = new Date(a.scheduled_time || a.sent_time);
+                const dateB = new Date(b.scheduled_time || b.sent_time);
+                return dateA - dateB;
+            });
+
+        if (videoPosts.length === 0) return;
+
+        // Prepare data
+        const labels = videoPosts.map(post => {
+            const date = new Date(post.scheduled_time || post.sent_time);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const videoViews = videoPosts.map(post => post.analytics.video_views);
+        const reach = videoPosts.map(post => post.analytics.reach || 0);
+
+        const ctx = document.getElementById('videoPerformanceChart').getContext('2d');
+        chartInstances.videoPerformance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Video Views',
+                        data: videoViews,
+                        backgroundColor: 'rgba(139, 92, 246, 0.75)',
+                        borderColor: '#8b5cf6',
+                        borderWidth: 0,
+                        borderRadius: 4,
+                        borderSkipped: false
+                    },
+                    {
+                        label: 'Reach',
+                        data: reach,
+                        backgroundColor: 'rgba(44, 75, 255, 0.75)',
+                        borderColor: '#2c4bff',
+                        borderWidth: 0,
+                        borderRadius: 4,
+                        borderSkipped: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            borderRadius: 3,
+                            usePointStyle: false,
+                            color: '#5f6368',
+                            font: {
+                                size: 11,
+                                weight: '500'
+                            },
+                            padding: 10
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 10,
+                        titleFont: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            weight: '600'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0,0,0,0.04)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            },
+                            callback: function(value) {
+                                return value.toLocaleString();
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false,
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== NEW PAGE COMPARISON CHARTS =====
+
+    function renderPageComparisonChart(pageMetrics) {
+        if (chartInstances.pageComparison) {
+            chartInstances.pageComparison.destroy();
+        }
+
+        if (!pageMetrics || pageMetrics.length === 0) {
+            document.getElementById('pageComparisonSection').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('pageComparisonSection').style.display = 'block';
+
+        // Take top 8 pages to avoid overcrowding
+        const topPages = pageMetrics.slice(0, 8);
+
+        const labels = topPages.map(p => p.page_name);
+        const engagementData = topPages.map(p => p.avg_engagement_rate);
+        const reachData = topPages.map(p => p.avg_reach_per_post);
+        const clicksData = topPages.map(p => Math.round(p.total_clicks / Math.max(p.total_posts, 1)));
+
+        const ctx = document.getElementById('pageComparisonChart').getContext('2d');
+        chartInstances.pageComparison = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Engagement Rate (%)',
+                        data: engagementData,
+                        backgroundColor: 'rgba(44, 75, 255, 0.75)',
+                        borderRadius: 4,
+                        borderSkipped: false,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Avg Reach',
+                        data: reachData,
+                        backgroundColor: 'rgba(16, 185, 129, 0.75)',
+                        borderRadius: 4,
+                        borderSkipped: false,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            borderRadius: 2,
+                            color: '#5f6368',
+                            font: {
+                                size: 11,
+                                weight: '500'
+                            },
+                            padding: 10
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 10,
+                        titleFont: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            weight: '600'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0,0,0,0.04)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 10,
+                                weight: '500'
+                            },
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Engagement Rate (%)',
+                            color: '#2c4bff',
+                            font: {
+                                size: 11,
+                                weight: '600'
+                            }
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        beginAtZero: true,
+                        grid: {
+                            drawOnChartArea: false,
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#10b981',
+                            font: {
+                                size: 11,
+                                weight: '600'
+                            },
+                            callback: function(value) {
+                                return value.toLocaleString();
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Avg Reach',
+                            color: '#10b981',
+                            font: {
+                                size: 11,
+                                weight: '600'
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false,
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#9aa0a6',
+                            font: {
+                                size: 11,
+                                weight: '500'
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPlatformPerformanceChart(platformMetrics) {
+        if (chartInstances.platformPerformance) {
+            chartInstances.platformPerformance.destroy();
+        }
+
+        if (!platformMetrics || platformMetrics.length === 0) return;
+
+        const labels = platformMetrics.map(p => {
+            const platform = p.platform.charAt(0).toUpperCase() + p.platform.slice(1);
+            return `${platform} (${p.page_count} page${p.page_count > 1 ? 's' : ''})`;
+        });
+        const data = platformMetrics.map(p => p.avg_engagement_rate);
+
+        const platformColors = {
+            'facebook': { bg: 'rgba(59, 130, 246, 0.75)', border: '#3b82f6' },
+            'instagram': { bg: 'rgba(236, 72, 153, 0.75)', border: '#ec4899' },
+            'tiktok': { bg: 'rgba(0, 0, 0, 0.75)', border: '#000000' },
+            'linkedin': { bg: 'rgba(14, 118, 168, 0.75)', border: '#0e76a8' },
+            'twitter': { bg: 'rgba(29, 155, 240, 0.75)', border: '#1d9bf0' }
+        };
+
+        const colors = platformMetrics.map(p => 
+            platformColors[p.platform.toLowerCase()] || { bg: 'rgba(107, 114, 128, 0.75)', border: '#6b7280' }
+        );
+
+        const ctx = document.getElementById('platformPerformanceChart').getContext('2d');
+        chartInstances.platformPerformance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors.map(c => c.bg),
+                    borderColor: colors.map(c => c.border),
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            borderRadius: 3,
+                            color: '#5f6368',
+                            font: {
+                                size: 11,
+                                weight: '500'
+                            },
+                            padding: 10,
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                return data.labels.map((label, i) => ({
+                                    text: label,
+                                    fillStyle: data.datasets[0].backgroundColor[i],
+                                    hidden: false,
+                                    index: i
+                                }));
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: '#1a1a1a',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 10,
+                        titleFont: {
+                            size: 12,
+                            weight: '600'
+                        },
+                        bodyFont: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                return `${label}: ${value.toFixed(2)}% engagement`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPageInsights(pageMetrics) {
+        const container = document.getElementById('pageInsightsList');
+        if (!pageMetrics || pageMetrics.length === 0) {
+            container.innerHTML = '<div class="panel-placeholder">No page data available</div>';
+            return;
+        }
+
+        const platformIcons = {
+            'facebook': '📘',
+            'instagram': '📷',
+            'tiktok': '🎵',
+            'linkedin': '💼',
+            'twitter': '🐦'
+        };
+
+        const html = pageMetrics.slice(0, 6).map((page, index) => {
+            const icon = platformIcons[page.platform.toLowerCase()] || '📱';
+            const rankClass = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-default';
+            const engagementRate = Number(page.avg_engagement_rate || 0).toFixed(1);
+            const avgReach = Number(page.avg_reach_per_post || 0).toLocaleString();
+            
+            return `
+                <div class="insight-card">
+                    <div class="insight-header">
+                        <div class="insight-platform">
+                            <span class="insight-platform-icon">${icon}</span>
+                            <div>
+                                <div class="insight-platform-name">${page.page_name}</div>
+                                <div class="insight-platform-meta">${page.platform}</div>
+                            </div>
+                        </div>
+                        <span class="insight-rank ${rankClass}">#${index + 1}</span>
+                    </div>
+                    <div class="insight-metrics">
+                        <div>
+                            <div class="insight-metric-label">Engagement</div>
+                            <div class="insight-metric-value">${engagementRate}%</div>
+                        </div>
+                        <div>
+                            <div class="insight-metric-label">Avg Reach</div>
+                            <div class="insight-metric-value">${avgReach}</div>
+                        </div>
+                        <div>
+                            <div class="insight-metric-label">Posts</div>
+                            <div class="insight-metric-value">${page.total_posts}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+    }
+
+    function renderRecommendations(pageMetrics, platformMetrics) {
+        const recommendationsSection = document.getElementById('recommendationsSection');
+        const container = document.getElementById('recommendationsList');
+        if (!recommendationsSection || !container) {
+            return;
+        }
+
+        if (!pageMetrics || pageMetrics.length === 0) {
+            recommendationsSection.style.display = 'none';
+            return;
+        }
+
+        recommendationsSection.style.display = 'block';
+        const recommendations = [];
+
+        // Find best and worst performing pages
+        const bestPage = pageMetrics[0];
+        const worstPage = pageMetrics[pageMetrics.length - 1];
+
+        // Recommendation 1: Best performing page
+        if (bestPage && bestPage.total_posts > 0) {
+            recommendations.push({
+                icon: '🌟',
+                title: 'Top Performer',
+                description: `${bestPage.page_name} has the highest engagement rate at ${bestPage.avg_engagement_rate}%. Keep creating similar content!`,
+                type: 'success'
+            });
+        }
+
+        // Recommendation 2: Page needs attention
+        if (worstPage && worstPage.avg_engagement_rate < 2 && pageMetrics.length > 1) {
+            recommendations.push({
+                icon: '⚠️',
+                title: 'Needs Attention',
+                description: `${worstPage.page_name} has lower engagement (${worstPage.avg_engagement_rate}%). Consider posting at different times or trying new content formats.`,
+                type: 'warning'
+            });
+        }
+
+        // Recommendation 3: Best platform
+        if (platformMetrics && platformMetrics.length > 0) {
+            const bestPlatform = platformMetrics.reduce((prev, current) => 
+                (prev.avg_engagement_rate > current.avg_engagement_rate) ? prev : current
+            );
+            recommendations.push({
+                icon: '🚀',
+                title: 'Platform Opportunity',
+                description: `${bestPlatform.platform.charAt(0).toUpperCase() + bestPlatform.platform.slice(1)} is your best performing platform with ${bestPlatform.avg_engagement_rate}% engagement. Consider posting more frequently here.`,
+                type: 'info'
+            });
+        }
+
+        // Recommendation 4: Video content
+        const pagesWithVideo = pageMetrics.filter(p => p.posts_with_video > 0);
+        if (pagesWithVideo.length > 0) {
+            const bestVideoPage = pagesWithVideo.reduce((prev, current) => 
+                (prev.total_video_views > current.total_video_views) ? prev : current
+            );
+            recommendations.push({
+                icon: '🎥',
+                title: 'Video Performance',
+                description: `Video content on ${bestVideoPage.page_name} has ${bestVideoPage.total_video_views.toLocaleString()} views. Video posts typically get higher engagement!`,
+                type: 'info'
+            });
+        }
+
+        // Recommendation 5: Consistency
+        if (pageMetrics.length > 1) {
+            const totalPosts = pageMetrics.reduce((sum, p) => sum + p.total_posts, 0);
+            const avgPostsPerPage = totalPosts / pageMetrics.length;
+            const inconsistentPages = pageMetrics.filter(p => p.total_posts < avgPostsPerPage * 0.5);
+            
+            if (inconsistentPages.length > 0) {
+                recommendations.push({
+                    icon: '📅',
+                    title: 'Post Consistency',
+                    description: `${inconsistentPages.length} page(s) have fewer posts than average. Consistent posting schedules improve engagement by up to 30%.`,
+                    type: 'tip'
+                });
+            }
+        }
+
+        if (recommendations.length === 0) {
+            container.innerHTML = '<div class="recommendation-placeholder">No recommendations available yet</div>';
+            return;
+        }
+
+        const html = recommendations.map(rec => `
+            <div class="recommendation-card ${rec.type}">
+                <div class="recommendation-card-title">${rec.icon} ${rec.title}</div>
+                <div class="recommendation-card-text">${rec.description}</div>
+            </div>
+        `).join('');
+
+        container.innerHTML = html;
+    }
+
+    function renderOverview_OLD(metrics, posts) {
+        const html = `
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Total Posts</div>
+                    <div class="metric-value">${metrics.totalPosts}</div>
+                    <div class="metric-change">Posts analyzed</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Impressions</div>
+                    <div class="metric-value">${metrics.totalImpressions.toLocaleString()}</div>
+                    <div class="metric-change">Total views</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Reach</div>
+                    <div class="metric-value">${metrics.totalReach.toLocaleString()}</div>
+                    <div class="metric-change">Unique people</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Engagement</div>
+                    <div class="metric-value">${metrics.totalEngagement}</div>
+                    <div class="metric-change">Likes + Comments + Shares + Saves</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Clicks</div>
+                    <div class="metric-value">${metrics.totalClicks}</div>
+                    <div class="metric-change">Link/Call clicks</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Engagement/Post</div>
+                    <div class="metric-value">${metrics.avgEngagementPerPost}</div>
+                    <div class="metric-change">Per post average</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Post Performance Trends</div>
+                <p style="color: #999; text-align: center; padding: 40px 0;">Chart integration coming soon with Chart.js library</p>
+            </div>
+        `;
+        document.getElementById('overviewContent').innerHTML = html;
+    }
+
+    function renderPostDetails(posts) {
+        if (!posts || posts.length === 0) {
+            document.getElementById('postsContent').innerHTML = `
+                <div class="analyze-empty-state">
+                    <div class="analyze-empty-icon">📝</div>
+                    <p class="analyze-empty-text">No posts yet</p>
+                    <p class="analyze-empty-subtext">Publish posts to see detailed analytics</p>
+                </div>
+            `;
+            return;
+        }
+
+        const html = posts.map(post => {
+            // Analytics is already attached to the post from getFilteredPosts()
+            const analytics = post.analytics;
+            
+            const caption = (post.caption || post.content || 'No caption');
+            // Remove "Posted on" prefix if it exists
+            const cleanCaption = caption.replace(/^Posted on\s+/i, '');
+            const displayCaption = cleanCaption.length > 120 ? cleanCaption.substring(0, 120) + '...' : cleanCaption;
+            const hasMedia = post.media && post.media.length > 0;
+            const mediaPreview = hasMedia ? post.media[0] : null;
+
+            // Media thumbnail HTML
+            let thumbnailHTML = '';
+            if (mediaPreview && mediaPreview.type === 'image') {
+                thumbnailHTML = `<img src="${mediaPreview.url}" alt="Post media" onerror="this.onerror=null; this.parentElement.innerHTML='<svg width=\"40\" height=\"40\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\" ry=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"M21 15l-5-5L5 21\"/></svg>';">`;
+            } else if (mediaPreview && mediaPreview.type === 'video') {
+                thumbnailHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
+            } else {
+                thumbnailHTML = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+            }
+
+            // Channel badges
+            const channelBadges = post.pages.map(p => 
+                `<span class="post-channel-badge ${p.platform}">${p.page_name}</span>`
+            ).join('');
+
+            // Total engagement
+            const totalEngagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.saves || 0);
+
+            return `
+                <div class="post-list-item" onclick="showPostDetail(${post.id})">
+                    <div class="post-thumbnail">
+                        ${thumbnailHTML}
+                    </div>
+                    <div class="post-info">
+                        <div class="post-header">
+                            <div class="post-caption-text">${displayCaption}</div>
+                            <div class="post-date">${formatDate(post.scheduled_time || post.sent_time)}</div>
+                        </div>
+                        <div class="post-channels">${channelBadges}</div>
+                    </div>
+                    <div class="post-metrics">
+                        <div class="post-metric">
+                            <div class="post-metric-value">${analytics.impressions.toLocaleString()}</div>
+                            <div class="post-metric-label">Impressions</div>
+                        </div>
+                        <div class="post-metric">
+                            <div class="post-metric-value">${analytics.reach.toLocaleString()}</div>
+                            <div class="post-metric-label">Reach</div>
+                        </div>
+                        <div class="post-metric">
+                            <div class="post-metric-value">${totalEngagement.toLocaleString()}</div>
+                            <div class="post-metric-label">Engagement</div>
+                        </div>
+                        <div class="post-metric">
+                            <div class="post-metric-value">${analytics.clicks.toLocaleString()}</div>
+                            <div class="post-metric-label">Clicks</div>
+                        </div>
+                    </div>
+                    <div class="post-action">
+                        <button class="post-view-btn" onclick="event.stopPropagation(); showPostDetail(${post.id});">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('postsContent').innerHTML = html;
+    }
+
+    function showPostDetail(postId) {
+        console.log('Opening post detail for post ID:', postId);
+        const post = allPosts.find(p => p.id === postId);
+        if (!post) {
+            console.error('Post not found:', postId);
+            return;
+        }
+
+        console.log('Post found:', post);
+        
+        // Get analytics for the selected page (or first page if none selected)
+        const pageAnalytics = selectedPage 
+            ? post.pages.find(p => p.page_id == selectedPage)
+            : (post.pages && post.pages.length > 0 ? post.pages[0] : null);
+        
+        const analytics = pageAnalytics ? pageAnalytics.analytics : {
+            impressions: 0,
+            reach: 0,
+            clicks: 0,
+            likes: 0,
+            comments: 0,
+            shares: 0,
+            saves: 0,
+            engagement: 0,
+            video_views: 0
+        };
+
+        // Set media
+        const mediaContainer = document.getElementById('postMediaContainer');
+        if (post.media && post.media.length > 0 && post.media[0].type === 'image') {
+            mediaContainer.innerHTML = `<img src="${post.media[0].url}" alt="Post media" onerror="this.parentElement.innerHTML='<div class=\\"media-placeholder\\"><svg width=\\"48\\" height=\\"48\\" viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"2\\"><rect x=\\"3\\" y=\\"3\\" width=\\"18\\" height=\\"18\\" rx=\\"2\\" ry=\\"2\\"/><circle cx=\\"8.5\\" cy=\\"8.5\\" r=\\"1.5\\"/><path d=\\"M21 15l-5-5L5 21\\"/></svg></div>';">`;
+        } else if (post.media && post.media.length > 0 && post.media[0].type === 'video') {
+            mediaContainer.innerHTML = `<video src="${post.media[0].url}" controls style="width:100%;height:100%;object-fit:cover;"></video>`;
+        } else {
+            mediaContainer.innerHTML = `<div class="media-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>`;
+        }
+
+        // Set posted date
+        document.getElementById('postDetailDate').textContent = formatDate(post.scheduled_time || post.sent_time);
+        
+        // Set channel badges
+        const channelBadges = post.pages.map(p => 
+            `<span class="channel-badge ${p.platform}">${p.page_name}</span>`
+        ).join('');
+        document.getElementById('postDetailPages').innerHTML = channelBadges;
+
+        // Set caption
+        document.getElementById('postDetailCaption').textContent = post.caption || post.content || 'No caption';
+
+        // Use stored engagement rate if available, otherwise calculate
+        let engagementRate;
+        if (analytics.engagement && analytics.engagement > 0) {
+            engagementRate = analytics.engagement.toFixed(2);
+        } else if (analytics.reach > 0) {
+            const totalEngagement = (analytics.likes || 0) + (analytics.comments || 0) + (analytics.shares || 0) + (analytics.clicks || 0);
+            engagementRate = ((totalEngagement / analytics.reach) * 100).toFixed(2);
+        } else {
+            engagementRate = '0.00';
+        }
+
+        // Set performance metrics
+        document.getElementById('detailImpressions').textContent = (analytics.impressions || 0).toLocaleString();
+        document.getElementById('detailReach').textContent = (analytics.reach || 0).toLocaleString();
+        document.getElementById('detailClicks').textContent = (analytics.clicks || 0).toLocaleString();
+        document.getElementById('detailEngagementRate').textContent = engagementRate + '%';
+
+        // Show video metrics if available
+        if (analytics.video_views && analytics.video_views > 0) {
+            document.getElementById('detailVideoMetrics').style.display = 'grid';
+            document.getElementById('detailVideoViews').textContent = (analytics.video_views || 0).toLocaleString();
+        } else {
+            document.getElementById('detailVideoMetrics').style.display = 'none';
+        }
+
+        // Set engagement breakdown
+        document.getElementById('detailLikes').textContent = (analytics.likes || 0).toLocaleString();
+        document.getElementById('detailComments').textContent = (analytics.comments || 0).toLocaleString();
+        document.getElementById('detailShares').textContent = (analytics.shares || 0).toLocaleString();
+        document.getElementById('detailSaves').textContent = (analytics.saves || 0).toLocaleString();
+
+        // Show modal
+        console.log('Showing modal...');
+        document.getElementById('postDetailModal').classList.add('active');
+    }
+
+    function closePostDetail() {
+        console.log('Closing modal...');
+        document.getElementById('postDetailModal').classList.remove('active');
+    }
+
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('postDetailModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closePostDetail();
+        }
+    });
+    
+    // Buffer-style: Load More Posts function
+    function loadMorePosts() {
+        const currentPage = {{ current_page }};
+        const nextPage = currentPage + 1;
+        const url = new URL(window.location);
+        url.searchParams.set('page', nextPage);
+        window.location.href = url.toString();
+    }
+</script>
+{% endblock %}
