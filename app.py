@@ -5,7 +5,7 @@ import logging
 import threading
 from flask_sqlalchemy import SQLAlchemy
 from utils.performance_monitor import monitor_performance, log_cache_hit, PerformanceTimer
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import secrets
@@ -1594,20 +1594,29 @@ def publish():
     # Attach latest import metadata for UI badges
     page_ids = [p.id for p in all_pages]
     page_import_status = {}
+    latest_lookup = {}
     if page_ids:
-        latest_jobs_subquery = db.session.query(
-            PageImportJob.page_id,
-            func.max(PageImportJob.created_at).label('latest_created')
-        ).filter(PageImportJob.page_id.in_(page_ids)).group_by(PageImportJob.page_id).subquery()
+        has_import_table = False
+        try:
+            inspector = inspect(db.engine)
+            has_import_table = inspector.has_table('page_import_jobs')
+        except Exception as exc:
+            print(f"[PUBLISH] Unable to check page_import_jobs table existence: {exc}")
 
-        latest_jobs = db.session.query(PageImportJob).join(
-            latest_jobs_subquery,
-            (PageImportJob.page_id == latest_jobs_subquery.c.page_id) &
-            (PageImportJob.created_at == latest_jobs_subquery.c.latest_created)
-        ).all()
-        latest_lookup = {job.page_id: job for job in latest_jobs}
-    else:
-        latest_lookup = {}
+        if has_import_table:
+            latest_jobs_subquery = db.session.query(
+                PageImportJob.page_id,
+                func.max(PageImportJob.created_at).label('latest_created')
+            ).filter(PageImportJob.page_id.in_(page_ids)).group_by(PageImportJob.page_id).subquery()
+
+            latest_jobs = db.session.query(PageImportJob).join(
+                latest_jobs_subquery,
+                (PageImportJob.page_id == latest_jobs_subquery.c.page_id) &
+                (PageImportJob.created_at == latest_jobs_subquery.c.latest_created)
+            ).all()
+            latest_lookup = {job.page_id: job for job in latest_jobs}
+        else:
+            print("[PUBLISH] Skipping page import metadata lookup because table is missing")
 
     for page in all_pages:
         meta = build_import_status_meta(latest_lookup.get(page.id))
