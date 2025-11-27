@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Channels - Postly Team{% endblock %}
+
+{% block content %}
+<style>
+    /* Minimalist Channel Access Page - Postly */
+    .channel-access-page {
+        background: #fafbfc;
+        min-height: 100vh;
+        padding: 40px 24px;
+    }
+    
+    .channel-access-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    
+    /* Header Section */
+    .channel-access-header {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 32px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        border: 1px solid #e8eaed;
+    }
+    
+    .header-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin: 0 0 8px 0;
+        letter-spacing: -0.01em;
+    }
+    
+    .header-subtitle {
+        font-size: 14px;
+        color: #5f6368;
+        margin: 0;
+    }
+    
+    .member-info {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #f0f2f5;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-weight: 500;
+        color: #1a1a1a;
+    }
+    
+    .role-badge {
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .role-member {
+        background: #e2e3e5;
+        color: #383d41;
+    }
+    
+    .role-admin {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    /* Info Card */
+    .info-card {
+        background: #f0f9ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 24px;
+    }
+    
+    .info-card-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin: 0 0 12px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .info-list {
+        margin: 0;
+        padding-left: 20px;
+    }
+    
+    .info-list li {
+        font-size: 13px;
+        color: #5f6368;
+        line-height: 1.8;
+        margin-bottom: 6px;
+    }
+    
+    .info-list li:last-child {
+        margin-bottom: 0;
+    }
+    
+    .info-list strong {
+        color: #1a1a1a;
+        font-weight: 500;
+    }
+    
+    /* Channels Section */
+    .channels-section {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 32px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        border: 1px solid #e8eaed;
+        margin-bottom: 24px;
+    }
+    
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin: 0 0 20px 0;
+    }
+    
+    /* Channel Items */
+    .channels-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .channel-item {
+        background: #fafbfc;
+        border: 1px solid #e8eaed;
+        border-radius: 10px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        transition: all 0.15s ease;
+    }
+    
+    .channel-item:hover {
+        background: #ffffff;
+        border-color: #d0d0d0;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    
+    .channel-info {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .channel-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: #2c4bff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        color: white;
+        flex-shrink: 0;
+    }
+    
+    .channel-icon.facebook {
+        background: #1877f2;
+    }
+    
+    .channel-icon.instagram {
+        background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+    }
+    
+    .channel-icon.tiktok {
+        background: #000000;
+    }
+    
+    .channel-icon.linkedin {
+        background: #0077b5;
+    }
+    
+    .channel-icon.twitter {
+        background: #1da1f2;
+    }
+    
+    .channel-details {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .channel-name {
+        font-size: 15px;
+        font-weight: 500;
+        color: #1a1a1a;
+        margin: 0 0 4px 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .channel-platform {
+        font-size: 12px;
+        color: #5f6368;
+        text-transform: capitalize;
+    }
+    
+    .channel-access-select {
+        position: relative;
+        flex-shrink: 0;
+    }
+    
+    .access-select {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        background: #ffffff;
+        border: 1px solid #e8eaed;
+        border-radius: 8px;
+        padding: 10px 36px 10px 16px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #1a1a1a;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        min-width: 200px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235f6368' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+    }
+    
+    .access-select:hover {
+        border-color: #2c4bff;
+        background-color: #fafbfc;
+    }
+    
+    .access-select:focus {
+        outline: none;
+        border-color: #2c4bff;
+        box-shadow: 0 0 0 3px rgba(44, 75, 255, 0.1);
+    }
+    
+    /* Action Buttons */
+    .actions-section {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+    }
+    
+    .btn-primary-postly {
+        background: #2c4bff;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-primary-postly:hover:not(:disabled) {
+        background: #1e3ad8;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(44, 75, 255, 0.2);
+        color: white;
+        text-decoration: none;
+    }
+    
+    .btn-primary-postly:disabled {
+        background: #e8eaed;
+        color: #9aa0a6;
+        cursor: not-allowed;
+    }
+    
+    .btn-secondary-postly {
+        background: #ffffff;
+        color: #5f6368;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid #e8eaed;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .btn-secondary-postly:hover {
+        background: #fafbfc;
+        border-color: #d0d0d0;
+        color: #1a1a1a;
+        text-decoration: none;
+    }
+    
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        background: #fafbfc;
+        border-radius: 12px;
+        border: 1px dashed #e8eaed;
+    }
+    
+    .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.3;
+    }
+    
+    .empty-state-title {
+        font-size: 16px;
+        font-weight: 500;
+        color: #1a1a1a;
+        margin-bottom: 8px;
+    }
+    
+    .empty-state-text {
+        font-size: 14px;
+        color: #5f6368;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .channel-access-page {
+            padding: 24px 16px;
+        }
+        
+        .channel-access-header {
+            padding: 24px;
+        }
+        
+        .channels-section {
+            padding: 24px;
+        }
+        
+        .channel-item {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .channel-info {
+            width: 100%;
+        }
+        
+        .channel-access-select {
+            width: 100%;
+        }
+        
+        .access-select {
+            width: 100%;
+        }
+        
+        .actions-section {
+            flex-direction: column;
+        }
+        
+        .btn-primary-postly,
+        .btn-secondary-postly {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+
+<div class="channel-access-page">
+    <div class="channel-access-container">
+        <!-- Header -->
+        <div class="channel-access-header">
+            <h1 class="header-title">Channel Access</h1>
+            <p class="header-subtitle">
+                Configure channel access for 
+                <span class="member-info">
+                    {{ member.user.username }}
+                    <span class="role-badge role-{{ member.role }}">{{ member.role }}</span>
+                </span>
+            </p>
+        </div>
+        
+        <!-- Info Card -->
+        <div class="info-card">
+            <div class="info-card-title">
+                <i class="fas fa-info-circle"></i>
+                <span>Access Levels:</span>
+            </div>
+            <ul class="info-list">
+                <li><strong>Full Posting:</strong> Can create and publish posts directly to this channel</li>
+                <li><strong>Approval Required:</strong> Can create posts as drafts; needs approval from admin/owner before publishing</li>
+                <li><strong>No Access:</strong> Cannot access or post to this channel</li>
+            </ul>
+        </div>
+        
+        <!-- Channels Form -->
+        <form method="POST" action="{{ url_for('team_member_channels', team_id=team.id, member_id=member.id) }}">
+            <div class="channels-section">
+                <h2 class="section-title">Connected Channels</h2>
+                
+                {% if channels %}
+                <div class="channels-list">
+                    {% for channel in channels %}
+                    <div class="channel-item">
+                        <div class="channel-info">
+                            <div class="channel-icon {{ channel.platform }}">
+                                {% if channel.platform == 'facebook' %}
+                                <i class="fab fa-facebook-f"></i>
+                                {% elif channel.platform == 'instagram' %}
+                                <i class="fab fa-instagram"></i>
+                                {% elif channel.platform == 'tiktok' %}
+                                <i class="fab fa-tiktok"></i>
+                                {% elif channel.platform == 'linkedin' %}
+                                <i class="fab fa-linkedin-in"></i>
+                                {% elif channel.platform == 'twitter' %}
+                                <i class="fab fa-twitter"></i>
+                                {% else %}
+                                <i class="fas fa-share-alt"></i>
+                                {% endif %}
+                            </div>
+                            <div class="channel-details">
+                                <div class="channel-name">{{ channel.page_name }}</div>
+                                <div class="channel-platform">{{ channel.platform }}</div>
+                            </div>
+                        </div>
+                        <div class="channel-access-select">
+                            <select name="channel_{{ channel.id }}" class="access-select">
+                                <option value="none" {% if current_access.get(channel.id) == 'none' or current_access.get(channel.id) is none %}selected{% endif %}>
+                                    ○ No Access
+                                </option>
+                                <option value="approval_required" {% if current_access.get(channel.id) == 'approval_required' %}selected{% endif %}>
+                                    ◑ Approval Required
+                                </option>
+                                <option value="full_posting" {% if current_access.get(channel.id) == 'full_posting' %}selected{% endif %}>
+                                    ● Full Posting
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="fas fa-link"></i>
+                    </div>
+                    <div class="empty-state-title">No channels available</div>
+                    <p class="empty-state-text">Connect channels to your team to manage member access</p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Actions -->
+            <div class="actions-section">
+                <a href="{{ url_for('team_dashboard', team_id=team.id) }}" class="btn-secondary-postly">
+                    <i class="fas fa-times"></i>
+                    <span>Cancel</span>
+                </a>
+                <button type="submit" class="btn-primary-postly" {% if not channels %}disabled{% endif %}>
+                    <i class="fas fa-save"></i>
+                    <span>Save Permissions</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
