@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 import os
 import tempfile
 import logging
+import threading
 from flask_sqlalchemy import SQLAlchemy
 from utils.performance_monitor import monitor_performance, log_cache_hit, PerformanceTimer
 from sqlalchemy import func
@@ -62,6 +63,9 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 ENABLE_TIKTOK_DEMO = os.getenv('ENABLE_TIKTOK_DEMO', 'false').lower() == 'true'
+PAGE_HISTORY_IMPORT_LIMIT = int(os.getenv('PAGE_HISTORY_IMPORT_LIMIT', '200'))
+ANALYTICS_REFRESH_DEFAULT_BATCH = int(os.getenv('ANALYTICS_REFRESH_DEFAULT_BATCH', '25'))
+ANALYTICS_REFRESH_AUTO_THRESHOLD = int(os.getenv('ANALYTICS_REFRESH_AUTO_THRESHOLD', '1'))
 
 
 # ======================== DATABASE MODELS ========================
@@ -414,6 +418,82 @@ class TeamInvitation(db.Model):
         return self.is_pending() and not self.is_expired()
 
 
+class PageImportJob(db.Model):
+    """Tracks asynchronous history imports for connected pages."""
+    __tablename__ = 'page_import_jobs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    page_id = db.Column(db.Integer, db.ForeignKey('connected_page.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    platform = db.Column(db.String(50), nullable=False)
+    scope = db.Column(db.String(50), default='auto')
+    status = db.Column(db.String(20), default='pending')
+    max_posts = db.Column(db.Integer, nullable=True)
+    total_posts_found = db.Column(db.Integer, default=0)
+    posts_imported = db.Column(db.Integer, default=0)
+    error_message = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'page_id': self.page_id,
+            'user_id': self.user_id,
+            'platform': self.platform,
+            'scope': self.scope,
+            'status': self.status,
+            'max_posts': self.max_posts,
+            'total_posts_found': self.total_posts_found,
+            'posts_imported': self.posts_imported,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() + 'Z' if self.finished_at else None,
+        }
+
+
+class AnalyticsRefreshJob(db.Model):
+    """Background job for refreshing analytics in manageable batches."""
+    __tablename__ = 'analytics_refresh_jobs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    page_id = db.Column(db.Integer, db.ForeignKey('connected_page.id'), nullable=True, index=True)
+    scope = db.Column(db.String(50), default='manual')
+    status = db.Column(db.String(20), default='pending')
+    batch_size = db.Column(db.Integer, default=ANALYTICS_REFRESH_DEFAULT_BATCH)
+    total_posts = db.Column(db.Integer, default=0)
+    processed = db.Column(db.Integer, default=0)
+    failed = db.Column(db.Integer, default=0)
+    skipped = db.Column(db.Integer, default=0)
+    error_message = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    last_progress_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'page_id': self.page_id,
+            'scope': self.scope,
+            'status': self.status,
+            'batch_size': self.batch_size,
+            'total_posts': self.total_posts,
+            'processed': self.processed,
+            'failed': self.failed,
+            'skipped': self.skipped,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() + 'Z' if self.finished_at else None,
+            'last_progress_at': self.last_progress_at.isoformat() + 'Z' if self.last_progress_at else None,
+        }
+
+
 # ======================== PERMISSION HELPER FUNCTIONS ========================
 
 def check_owner_access(team_id, user_id):
@@ -552,6 +632,236 @@ def user_can_access_page(user_id, page):
         return True
     team_pages = get_accessible_team_channels(user_id)
     return any(team_page.id == page.id for team_page in team_pages)
+
+
+# ======================== PAGE IMPORT HELPERS ========================
+
+
+def get_latest_import_job_for_page(page_id):
+    if not page_id:
+        return None
+    return PageImportJob.query.filter_by(page_id=page_id).order_by(PageImportJob.created_at.desc()).first()
+
+
+def build_import_status_meta(job):
+    if not job:
+        return {
+            'state': 'idle',
+            'label': 'History not imported',
+            'detail': 'Import recent posts to backfill your calendar.',
+            'posts_imported': 0,
+            'last_run': None
+        }
+
+    state = (job.status or 'pending').lower()
+    label_map = {
+        'pending': 'Queued for import',
+        'running': 'Import in progress',
+        'completed': 'History synced',
+        'failed': 'Import failed'
+    }
+    detail_map = {
+        'pending': 'We will start pulling posts shortly.',
+        'running': 'Fetching historical posts in the background.',
+        'completed': f"Imported {job.posts_imported} post(s).",
+        'failed': job.error_message or 'Retry the import to try again.'
+    }
+
+    return {
+        'state': state,
+        'label': label_map.get(state, state.title()),
+        'detail': detail_map.get(state, ''),
+        'posts_imported': job.posts_imported,
+        'last_run': job.finished_at.isoformat() + 'Z' if job.finished_at else None
+    }
+
+
+def enqueue_page_import_job(page, user_id, scope='auto-connect', max_posts=None, auto_start=True):
+    if not page or not page.page_access_token:
+        return None
+
+    job = PageImportJob(
+        page_id=page.id,
+        user_id=user_id,
+        platform=page.platform,
+        scope=scope,
+        status='pending',
+        max_posts=max_posts or PAGE_HISTORY_IMPORT_LIMIT
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    if auto_start:
+        start_page_import_job(job.id)
+
+    return job
+
+
+def start_page_import_job(job_id):
+    if not job_id:
+        return
+    threading.Thread(target=_run_page_import_job, args=(job_id,), daemon=True).start()
+
+
+def _run_page_import_job(job_id):
+    with app.app_context():
+        job = PageImportJob.query.get(job_id)
+        if not job:
+            return
+        if job.status == 'running':
+            return
+
+        job.status = 'running'
+        job.started_at = datetime.utcnow()
+        job.error_message = None
+        db.session.commit()
+
+        page = ConnectedPage.query.get(job.page_id)
+        if not page:
+            job.status = 'failed'
+            job.error_message = 'Connected page not found'
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            return
+
+        if not page.page_access_token:
+            job.status = 'failed'
+            job.error_message = 'Page access token missing'
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            return
+
+        try:
+            platform_name = (page.platform or '').lower()
+            max_posts = job.max_posts or PAGE_HISTORY_IMPORT_LIMIT
+            if platform_name == 'facebook':
+                posts_data = get_facebook_page_posts(page.platform_page_id, page.page_access_token, max_posts=max_posts)
+                job.total_posts_found = len(posts_data)
+                posts_imported = store_facebook_posts_to_db(job.user_id, page, posts_data)
+            elif platform_name == 'tiktok':
+                posts_data = list_tiktok_posts(page.platform_page_id, page.page_access_token, max_pages=1)
+                job.total_posts_found = len(posts_data)
+                posts_imported = store_tiktok_posts_to_db(job.user_id, page, posts_data)
+            else:
+                raise ValueError(f"Platform '{platform_name}' not supported for history import")
+
+            job.posts_imported = posts_imported
+            job.status = 'completed'
+        except Exception as exc:
+            job.status = 'failed'
+            job.error_message = str(exc)
+        finally:
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+
+
+# ======================== ANALYTICS REFRESH HELPERS ========================
+
+
+def _safe_count_posts_pending_refresh(user_id, page_id=None):
+    try:
+        from tasks import count_posts_needing_refresh as _count_posts
+        return _count_posts(user_id, page_id)
+    except Exception as exc:
+        logger.warning(f"Unable to count posts needing refresh: {exc}")
+        return 0
+
+
+def get_latest_analytics_job(user_id, page_id=None):
+    if not user_id:
+        return None
+    query = AnalyticsRefreshJob.query.filter(AnalyticsRefreshJob.user_id == user_id)
+    if page_id:
+        query = query.filter(AnalyticsRefreshJob.page_id == page_id)
+    else:
+        query = query.filter(AnalyticsRefreshJob.page_id.is_(None))
+    return query.order_by(AnalyticsRefreshJob.created_at.desc()).first()
+
+
+def enqueue_analytics_refresh_job(user_id, page_id=None, scope='manual', batch_size=None, auto_start=True):
+    if not user_id:
+        return None
+
+    job = AnalyticsRefreshJob(
+        user_id=user_id,
+        page_id=page_id,
+        scope=scope,
+        status='pending',
+        batch_size=batch_size or ANALYTICS_REFRESH_DEFAULT_BATCH,
+        total_posts=0,
+        processed=0,
+        failed=0,
+        skipped=0
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    if auto_start:
+        start_analytics_refresh_job(job.id)
+
+    return job
+
+
+def start_analytics_refresh_job(job_id):
+    if not job_id:
+        return
+    threading.Thread(target=_run_analytics_refresh_job, args=(job_id,), daemon=True).start()
+
+
+def _run_analytics_refresh_job(job_id):
+    with app.app_context():
+        job = AnalyticsRefreshJob.query.get(job_id)
+        if not job:
+            return
+        if job.status == 'running':
+            return
+
+        job.status = 'running'
+        job.started_at = datetime.utcnow()
+        job.error_message = None
+        job.last_progress_at = datetime.utcnow()
+        db.session.commit()
+
+        try:
+            from tasks import refresh_all_post_analytics
+
+            total_posts = _safe_count_posts_pending_refresh(job.user_id, job.page_id)
+            job.total_posts = total_posts
+            job.processed = 0
+            job.failed = 0
+            job.skipped = 0
+            db.session.commit()
+
+            if total_posts == 0:
+                job.status = 'completed'
+                job.finished_at = datetime.utcnow()
+                db.session.commit()
+                return
+
+            remaining = total_posts
+            batch_size = job.batch_size or ANALYTICS_REFRESH_DEFAULT_BATCH
+
+            while remaining > 0:
+                result = refresh_all_post_analytics(job.user_id, limit=batch_size, page_id=job.page_id) or {}
+                processed = result.get('processed', 0)
+                job.processed += processed
+                job.failed += result.get('failed', 0)
+                job.skipped += result.get('skipped', 0)
+                job.last_progress_at = datetime.utcnow()
+                remaining = max(0, remaining - processed)
+                db.session.commit()
+
+                if processed == 0:
+                    break
+
+            final_remaining = _safe_count_posts_pending_refresh(job.user_id, job.page_id)
+            job.status = 'completed' if final_remaining == 0 else 'partial'
+        except Exception as exc:
+            job.status = 'failed'
+            job.error_message = str(exc)
+        finally:
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
 
 
 # ======================== APPLICATION INITIALIZATION ========================
@@ -694,8 +1004,8 @@ def build_platform_view_url(page, platform_post_id):
     return None
 
 
-def get_facebook_page_posts(page_id, access_token):
-    """Fetch ALL historical posts from a Facebook page (paginate through all results)"""
+def get_facebook_page_posts(page_id, access_token, max_posts=None):
+    """Fetch historical posts from a Facebook page with optional limit."""
     print(f"[POSTS] Fetching ALL posts for page {page_id}")
     all_posts = []
     try:
@@ -780,10 +1090,11 @@ def get_facebook_page_posts(page_id, access_token):
         # Now fetch all posts with the working combination
         print(f"[POSTS] Fetching all posts with working fields: {working_fields}")
         params = {
-            'fields': working_fields,
             'access_token': access_token,
             'limit': 100
         }
+        if working_fields:
+            params['fields'] = working_fields
         
         first_request = True
         while url:
@@ -810,6 +1121,11 @@ def get_facebook_page_posts(page_id, access_token):
             posts_data = result.get('data', [])
             all_posts.extend(posts_data)
             print(f"[POSTS] Retrieved {len(posts_data)} posts in this batch (total: {len(all_posts)})")
+
+            if max_posts and len(all_posts) >= max_posts:
+                all_posts = all_posts[:max_posts]
+                print(f"[POSTS] Reached max_posts limit ({max_posts}), stopping pagination")
+                break
             
             paging = result.get('paging', {})
             url = paging.get('next')
@@ -1274,6 +1590,29 @@ def publish():
     
     # Combine all pages (no duplicates)
     all_pages = owned_pages + [p for p in team_pages if p.id not in set(p.id for p in owned_pages)]
+
+    # Attach latest import metadata for UI badges
+    page_ids = [p.id for p in all_pages]
+    page_import_status = {}
+    if page_ids:
+        latest_jobs_subquery = db.session.query(
+            PageImportJob.page_id,
+            func.max(PageImportJob.created_at).label('latest_created')
+        ).filter(PageImportJob.page_id.in_(page_ids)).group_by(PageImportJob.page_id).subquery()
+
+        latest_jobs = db.session.query(PageImportJob).join(
+            latest_jobs_subquery,
+            (PageImportJob.page_id == latest_jobs_subquery.c.page_id) &
+            (PageImportJob.created_at == latest_jobs_subquery.c.latest_created)
+        ).all()
+        latest_lookup = {job.page_id: job for job in latest_jobs}
+    else:
+        latest_lookup = {}
+
+    for page in all_pages:
+        meta = build_import_status_meta(latest_lookup.get(page.id))
+        page._import_meta = meta
+        page_import_status[page.id] = meta
     
     # Group pages by platform for template compatibility
     pages_by_platform = {}
@@ -1316,7 +1655,8 @@ def publish():
                          owned_pages=owned_pages,
                          team_pages=team_pages,
                          user_posts=all_accessible_posts,
-                         current_user_id=user_id)
+                         current_user_id=user_id,
+                         page_import_status=page_import_status)
 
 
 @app.route('/drafts', methods=['GET'])
@@ -1496,6 +1836,26 @@ def analyze():
             }
             posts_data.append(post_dict)
     
+    # Prepare analytics job metadata and auto-queue background refresh if needed
+    analytics_job_meta = {
+        'stale_post_count': 0,
+        'job': None
+    }
+    stale_post_count = _safe_count_posts_pending_refresh(user_id)
+    analytics_job_meta['stale_post_count'] = stale_post_count
+
+    latest_job = get_latest_analytics_job(user_id)
+    auto_threshold = max(1, ANALYTICS_REFRESH_AUTO_THRESHOLD)
+    if stale_post_count >= auto_threshold and (not latest_job or latest_job.status not in ['pending', 'running']):
+        latest_job = enqueue_analytics_refresh_job(
+            user_id=user_id,
+            scope='auto-on-analyze',
+            auto_start=True
+        ) or latest_job
+
+    if latest_job:
+        analytics_job_meta['job'] = latest_job.to_dict()
+
     # Calculate page comparison metrics for Overview tab
     page_metrics = {}
     for page in all_pages:
@@ -1591,7 +1951,8 @@ def analyze():
                          current_page=current_page,
                          per_page=per_page,
                          selected_days=days,
-                         total_posts_count=total_posts_count)
+                         total_posts_count=total_posts_count,
+                         analytics_job_meta=analytics_job_meta)
 
 
 @app.route('/tiktok/demo', methods=['GET'])
@@ -1940,6 +2301,110 @@ def get_analytics_summary():
     except Exception as e:
         logger.error(f"Error getting analytics summary: {e}")
         return jsonify({'success': False, 'error': 'Analytics summary temporarily unavailable'}), 500
+
+
+@app.route('/api/analytics/jobs', methods=['POST'])
+@login_required
+def create_analytics_refresh_job():
+    user_id = session.get('user_id')
+    if not user_id:
+        return {'success': False, 'error': 'Not authenticated'}, 401
+
+    data = request.get_json() or {}
+    page_id = data.get('page_id')
+    scope = data.get('scope', 'manual')
+    auto_start = data.get('auto_start', True)
+    reuse_existing = data.get('reuse_existing', True)
+    batch_size = data.get('batch_size')
+
+    if page_id:
+        page = ConnectedPage.query.get(page_id)
+        if not page or not user_can_access_page(user_id, page):
+            return {'success': False, 'error': 'Page not found or inaccessible'}, 404
+    else:
+        page = None
+
+    try:
+        if batch_size:
+            batch_size = max(1, int(batch_size))
+        else:
+            batch_size = None
+    except (TypeError, ValueError):
+        batch_size = None
+
+    running_query = AnalyticsRefreshJob.query.filter(
+        AnalyticsRefreshJob.user_id == user_id,
+        AnalyticsRefreshJob.status.in_(['pending', 'running'])
+    )
+    if page_id:
+        running_query = running_query.filter(AnalyticsRefreshJob.page_id == page_id)
+    else:
+        running_query = running_query.filter(AnalyticsRefreshJob.page_id.is_(None))
+
+    existing = running_query.order_by(AnalyticsRefreshJob.created_at.desc()).first()
+    if existing and reuse_existing:
+        remaining = _safe_count_posts_pending_refresh(user_id, page_id)
+        return {
+            'success': True,
+            'job': existing.to_dict(),
+            'reused': True,
+            'remaining': remaining
+        }
+
+    job = enqueue_analytics_refresh_job(
+        user_id=user_id,
+        page_id=page_id,
+        scope=scope,
+        batch_size=batch_size,
+        auto_start=auto_start
+    )
+
+    if not job:
+        return {'success': False, 'error': 'Unable to create analytics job'}, 500
+
+    remaining = _safe_count_posts_pending_refresh(user_id, page_id)
+    return {
+        'success': True,
+        'job': job.to_dict(),
+        'remaining': remaining
+    }
+
+
+@app.route('/api/analytics/jobs/latest', methods=['GET'])
+@login_required
+def get_latest_analytics_refresh_job():
+    user_id = session.get('user_id')
+    if not user_id:
+        return {'success': False, 'error': 'Not authenticated'}, 401
+
+    page_id = request.args.get('page_id', type=int)
+    job = get_latest_analytics_job(user_id, page_id)
+    remaining = _safe_count_posts_pending_refresh(user_id, page_id)
+
+    return {
+        'success': True,
+        'job': job.to_dict() if job else None,
+        'remaining': remaining
+    }
+
+
+@app.route('/api/analytics/jobs/<int:job_id>', methods=['GET'])
+@login_required
+def get_analytics_refresh_job(job_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return {'success': False, 'error': 'Not authenticated'}, 401
+
+    job = AnalyticsRefreshJob.query.get(job_id)
+    if not job or job.user_id != user_id:
+        return {'success': False, 'error': 'Job not found'}, 404
+
+    remaining = _safe_count_posts_pending_refresh(user_id, job.page_id)
+    return {
+        'success': True,
+        'job': job.to_dict(),
+        'remaining': remaining
+    }
 
 
 @app.route('/api/refresh-analytics', methods=['POST'])
@@ -2437,10 +2902,11 @@ def select_oauth_accounts(platform):
             flash('Please select at least one account', 'warning')
             return render_template('dashboard/select_accounts.html', pages=annotated_pages, platform=platform)
         
-        # Add selected pages to ConnectedPage and fetch posts
+        # Add selected pages to ConnectedPage and enqueue history imports
         saved_count = 0
         access_token = session.get('oauth_access_token')
-        
+        new_pages_for_import = []
+
         for page_id in selected_page_ids:
             # Find page in pages list
             page_data = next((p for p in pages if str(p.get('id')) == page_id), None)
@@ -2482,28 +2948,8 @@ def select_oauth_accounts(platform):
                 print(f"[SELECT-ACCOUNTS] Added: {page_data.get('name', 'Unnamed')} (ID: {page_id})")
                 print(f"[SELECT-ACCOUNTS] Stored page access token for {page_id}")
                 
-                # Fetch and populate posts from this page
-                if platform.lower() == 'facebook':
-                    # Use the page access token, not the user token
-                    page_access_token = page_data.get('access_token', '')
-                    print(f"[SELECT-ACCOUNTS] Page data: {page_data}")
-                    print(f"[SELECT-ACCOUNTS] Page access token available: {bool(page_access_token)}")
-                    
-                    if page_access_token:
-                        print(f"[SELECT-ACCOUNTS] Fetching posts for page {page_id}")
-                        posts_data = get_facebook_page_posts(page_id, page_access_token)
-                        posts_added = store_facebook_posts_to_db(user_id, connected_page, posts_data)
-                        print(f"[SELECT-ACCOUNTS] Successfully fetched and stored {posts_added} posts")
-                    else:
-                        print(f"[SELECT-ACCOUNTS] WARNING: No page access token found for {page_id}")
-                        print(f"[SELECT-ACCOUNTS] Available keys in page_data: {list(page_data.keys())}")
-                elif platform.lower() == 'tiktok':
-                    try:
-                        posts_data = list_tiktok_posts(page_id, access_token)
-                        posts_added = store_tiktok_posts_to_db(user_id, connected_page, posts_data)
-                        print(f"[SELECT-ACCOUNTS] Stored {posts_added} TikTok posts for {page_id}")
-                    except TikTokApiError as exc:
-                        print(f"[SELECT-ACCOUNTS] TikTok fetch failed: {exc}")
+                if platform in ['facebook', 'tiktok']:
+                    new_pages_for_import.append(connected_page)
             except Exception as e:
                 print(f"[SELECT-ACCOUNTS] Error adding page {page_id}: {str(e)}")
                 db.session.rollback()
@@ -2512,12 +2958,22 @@ def select_oauth_accounts(platform):
         print(f"[SELECT-ACCOUNTS] About to commit {saved_count} new pages...")
         db.session.commit()
         print(f"[SELECT-ACCOUNTS] Committed successfully")
+
+        jobs_created = []
+        for page in new_pages_for_import:
+            job = enqueue_page_import_job(page, user_id, scope='auto-connect')
+            if job:
+                jobs_created.append(job)
+                print(f"[SELECT-ACCOUNTS] Queued import job {job.id} for page {page.page_name}")
         
         # Clean up session data
         session.pop('oauth_pages', None)
         session.pop('oauth_access_token', None)
         
-        flash(f'Successfully added {saved_count} account(s) to Postly!', 'success')
+        if jobs_created:
+            flash(f'Successfully added {saved_count} account(s). Importing history in the background.', 'success')
+        else:
+            flash(f'Successfully added {saved_count} account(s) to Postly!', 'success')
         print("[SELECT-ACCOUNTS] ========== ROUTE END ==========\n")
         return redirect(url_for('publish'))
     
@@ -3789,71 +4245,84 @@ def get_post_analytics(post_id):
         return {'success': False, 'error': str(e)}, 500
 
 
+@app.route('/api/pages/<int:page_id>/import-history', methods=['POST'])
+@login_required
+def trigger_page_history_import(page_id):
+    """Queue a background job to import a page's history."""
+    try:
+        user_id = session.get('user_id')
+        page = ConnectedPage.query.get(page_id)
+        if not page or not user_can_access_page(user_id, page):
+            return {'success': False, 'error': 'Page not found or inaccessible'}, 404
+
+        payload = request.get_json() or {}
+        max_posts = payload.get('max_posts')
+        if max_posts:
+            try:
+                max_posts = max(1, int(max_posts))
+            except (TypeError, ValueError):
+                max_posts = None
+
+        job = enqueue_page_import_job(page, user_id, scope='manual-refresh', max_posts=max_posts)
+        if not job:
+            return {'success': False, 'error': 'Missing page access token. Reconnect this page first.'}, 400
+
+        return {'success': True, 'job': job.to_dict(), 'page': {'id': page.id, 'name': page.page_name}}
+    except Exception as e:
+        print(f"[IMPORT] Error queueing job for page {page_id}: {e}")
+        return {'success': False, 'error': str(e)}, 500
+
+
+@app.route('/api/pages/<int:page_id>/import-history', methods=['GET'])
+@login_required
+def get_page_history_import_status(page_id):
+    """Return latest job info for the requested page."""
+    try:
+        user_id = session.get('user_id')
+        page = ConnectedPage.query.get(page_id)
+        if not page or not user_can_access_page(user_id, page):
+            return {'success': False, 'error': 'Page not found or inaccessible'}, 404
+
+        job = get_latest_import_job_for_page(page_id)
+        return {'success': True, 'page': {'id': page.id, 'name': page.page_name}, 'job': job.to_dict() if job else None}
+    except Exception as e:
+        print(f"[IMPORT] Error fetching job status for page {page_id}: {e}")
+        return {'success': False, 'error': str(e)}, 500
+
+
 @app.route('/api/posts/refresh/historical', methods=['POST'])
 @login_required
 def refresh_historical_posts():
-    """Refresh historical posts from all connected Facebook pages"""
+    """Queue background import jobs for all connected pages."""
     try:
         user_id = session.get('user_id')
-        
-        # Get all connected pages for this user
         pages = ConnectedPage.query.filter_by(user_id=user_id).all()
-        
+
         if not pages:
             return {'success': False, 'error': 'No connected pages found'}, 400
-        
-        total_posts_added = 0
-        results = []
-        
+
+        queued = []
+        skipped = []
         for page in pages:
-            platform_name = page.platform.lower()
+            platform_name = (page.platform or '').lower()
             if platform_name not in ['facebook', 'tiktok']:
-                results.append({
-                    'page': page.page_name,
-                    'status': 'skipped',
-                    'reason': 'Platform not supported for refresh'
-                })
+                skipped.append({'page': page.page_name, 'reason': 'Platform not supported'})
                 continue
-            
-            if not page.page_access_token:
-                results.append({
-                    'page': page.page_name,
-                    'status': 'error',
-                    'reason': 'No page access token available'
-                })
-                continue
-            
-            try:
-                if platform_name == 'facebook':
-                    posts_data = get_facebook_page_posts(page.platform_page_id, page.page_access_token)
-                    posts_added = store_facebook_posts_to_db(user_id, page, posts_data)
-                else:
-                    posts_data = list_tiktok_posts(page.platform_page_id, page.page_access_token)
-                    posts_added = store_tiktok_posts_to_db(user_id, page, posts_data)
-                
-                total_posts_added += posts_added
-                results.append({
-                    'page': page.page_name,
-                    'status': 'success',
-                    'posts_added': posts_added
-                })
-                print(f"[REFRESH] Added {posts_added} posts for page {page.page_name}")
-                
-            except Exception as e:
-                results.append({
-                    'page': page.page_name,
-                    'status': 'error',
-                    'reason': str(e)
-                })
-                print(f"[REFRESH] Error fetching posts for page {page.page_name}: {e}")
-        
+
+            job = enqueue_page_import_job(page, user_id, scope='manual-refresh')
+            if job:
+                queued.append({'page': page.page_name, 'job': job.to_dict()})
+                print(f"[REFRESH] Queued import job {job.id} for page {page.page_name}")
+            else:
+                skipped.append({'page': page.page_name, 'reason': 'Missing page access token'})
+
         return {
             'success': True,
-            'total_posts_added': total_posts_added,
-            'pages_processed': len([r for r in results if r['status'] != 'error']),
-            'results': results
+            'jobs_created': len(queued),
+            'queued': queued,
+            'skipped': skipped
         }
-        
+
     except Exception as e:
         print(f"[REFRESH] Error refreshing historical posts: {e}")
         return {'success': False, 'error': str(e)}, 500
@@ -4510,10 +4979,15 @@ def publish_to_facebook(page_id, post, access_token):
                 if os.path.exists(filepath):
                     print(f"[PUBLISH] Uploading video directly to Facebook")
                     url = f"https://graph.facebook.com/v18.0/{page_id}/videos"
+                    # Graph video uploads ignore `message`; send caption via `description`
+                    video_payload = {
+                        'description': post.caption or post.content or '',
+                        'access_token': access_token
+                    }
                     
                     with open(filepath, 'rb') as video_file:
                         files = {'source': video_file}
-                        response = requests.post(url, data=data, files=files, timeout=120)
+                        response = requests.post(url, data=video_payload, files=files, timeout=120)
                         response.raise_for_status()
                         result = response.json()
                         
