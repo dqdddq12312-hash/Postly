@@ -1,57 +1,51 @@
 services:
   - type: web
-    name: fb-posting-app
+    name: postly-app
     env: python
+    region: singapore
     buildCommand: |
-      mkdir -p templates uploads
+      pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    plan: free
-    staticPublishPath: ./templates # Ensure templates directory is included
+      python init_db.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --preload
+    plan: starter
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: fb-posting-db
+          name: postly-db
           property: connectionString
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: FLASK_ENV
+        value: production
       - key: FB_APP_ID
         sync: false
       - key: FB_APP_SECRET
         sync: false
       - key: FB_REDIRECT_URI
         sync: false
-      - key: GOOGLE_SHEETS_ID
+      - key: SENDGRID_API_KEY
         sync: false
-      - key: UPLOAD_FOLDER
-        value: /tmp/uploads  # Use /tmp for file uploads on Render
-      - key: TZ
-        value: Asia/Ho_Chi_Minh  # Set timezone for the application
-
-  - type: worker
-    name: fb-posting-scheduler
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python scheduler_worker.py  # We'll create this file
-    plan: free
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: fb-posting-db
-          property: connectionString
-      - key: FB_APP_ID
-        sync: false
-      - key: FB_APP_SECRET
-        sync: false
-      - key: FB_REDIRECT_URI
-        sync: false
-      - key: GOOGLE_SHEETS_ID
-        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        value: noreply@postly.app
       - key: UPLOAD_FOLDER
         value: /tmp/uploads
       - key: TZ
         value: Asia/Ho_Chi_Minh
+      - key: TIKTOK_CLIENT_KEY
+        sync: false
+      - key: TIKTOK_CLIENT_SECRET
+        sync: false
+      - key: TIKTOK_REDIRECT_URI
+        sync: false
+      - key: ENABLE_TIKTOK_DEMO
+        value: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
 
 databases:
-  - name: fb-posting-db
-    plan: free
+  - name: postly-db
+    databaseName: postly
+    plan: starter
+    region: singapore
+
