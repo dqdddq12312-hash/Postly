@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort, send_from_directory, g
 import atexit
 import os
 import tempfile
@@ -58,6 +58,36 @@ if database_url and database_url.startswith('postgres://'):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{os.path.join(BASE_DIR, 'fb_tokens.db')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+
+@app.before_request
+def load_current_user():
+    """Ensure session user still exists and expose it via flask.g."""
+    g.current_user = None
+
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+
+    user = User.query.get(user_id)
+    if user:
+        g.current_user = user
+        return None
+
+    # Stale session: clear it and respond based on request type
+    session.clear()
+    message = 'Your session has expired. Please log in again.'
+
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': message, 'code': 'SESSION_EXPIRED'}), 401
+
+    endpoint = (request.endpoint or '').split('.')[-1]
+    if endpoint in {'login', 'signup', 'serve_upload', 'static'}:
+        flash(message, 'warning')
+        return None
+
+    flash(message, 'warning')
+    return redirect(url_for('login'))
 
 # Setup logger for analytics
 logger = logging.getLogger(__name__)
@@ -1009,6 +1039,16 @@ def build_platform_view_url(page, platform_post_id):
     return None
 
 
+def normalize_post_status_value(status):
+    """Map legacy/internal statuses to the variants our UI understands."""
+    normalized = (status or 'draft').lower()
+    if normalized == 'publishing':
+        return 'scheduled'
+    if normalized == 'published':
+        return 'sent'
+    return normalized
+
+
 def get_facebook_page_posts(page_id, access_token, max_posts=None):
     """Fetch historical posts from a Facebook page with optional limit."""
     print(f"[POSTS] Fetching ALL posts for page {page_id}")
@@ -1017,9 +1057,10 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         # Try different field combinations, prioritizing useful data
         # Start with minimal, but ensure we get at least created_time for useful posts
         field_sets = [
-            'id,created_time',  # Minimum useful data
-            'id,message,created_time',  # With message
-            'id,message,caption,created_time,type,permalink_url'  # Full set
+            'id,message,caption,created_time,type,permalink_url,full_picture,attachments{media_type,media,url,subattachments,target}',
+            'id,message,caption,created_time,type,permalink_url,full_picture',
+            'id,message,created_time',
+            'id,created_time'
         ]
         
         endpoints = [
@@ -1145,6 +1186,75 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         return []
 
 
+def _extract_media_from_facebook_post(post_data):
+    """Return a list of media payloads extracted from a Facebook post response."""
+    media_items = []
+    if not post_data:
+        return media_items
+
+    attachments = ((post_data.get('attachments') or {}).get('data')) or []
+    seen_urls = set()
+
+    def handle_attachment(attachment):
+        if not attachment:
+            return
+
+        subattachments = (attachment.get('subattachments') or {}).get('data') or []
+        for sub in subattachments:
+            handle_attachment(sub)
+
+        media_type = (attachment.get('media_type') or attachment.get('type') or '').lower()
+        media_block = attachment.get('media') or {}
+        image_block = media_block.get('image') or {}
+
+        candidates = [
+            media_block.get('source'),
+            image_block.get('src'),
+            image_block.get('url'),
+            attachment.get('media_url'),
+            attachment.get('url'),
+            (attachment.get('target') or {}).get('url')
+        ]
+        media_url = next((candidate for candidate in candidates if candidate), None)
+        if media_url and media_url not in seen_urls:
+            normalized_type = 'video' if 'video' in media_type else 'image'
+            media_items.append({'url': media_url, 'type': normalized_type})
+            seen_urls.add(media_url)
+
+    for attachment in attachments:
+        handle_attachment(attachment)
+
+    if not media_items:
+        full_picture = post_data.get('full_picture')
+        if full_picture and full_picture not in seen_urls:
+            media_items.append({'url': full_picture, 'type': 'image'})
+
+    return media_items
+
+
+def _attach_media_to_post(post, media_items):
+    """Create PostMedia rows for the provided Post, skipping duplicates."""
+    if not post or not media_items:
+        return 0
+
+    existing_urls = {media.media_url for media in getattr(post, 'media', []) or []}
+    attached = 0
+
+    for media in media_items:
+        media_url = media.get('url')
+        if not media_url or media_url in existing_urls:
+            continue
+        db.session.add(PostMedia(
+            post_id=post.id,
+            media_url=media_url,
+            media_type=media.get('type') or 'image'
+        ))
+        existing_urls.add(media_url)
+        attached += 1
+
+    return attached
+
+
 def store_facebook_posts_to_db(user_id, connected_page, posts_data):
     """Store Facebook posts to database, avoiding duplicates"""
     print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name}")
@@ -1154,6 +1264,7 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
         post_id = post_data.get('id', '')
         print(f"[POSTS] Processing post: {post_id}")
         print(f"[POSTS] Post data keys: {list(post_data.keys())}")
+        media_payload = _extract_media_from_facebook_post(post_data)
         
         # If message is missing, fetch it separately
         message = post_data.get('message') or post_data.get('caption')
@@ -1199,6 +1310,10 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
                 posts_added += 1
             else:
                 print(f"[POSTS] → Association already exists (Assoc ID: {existing_assoc.id}, Platform Post ID: {existing_assoc.platform_post_id})")
+
+            attached = _attach_media_to_post(existing_post, media_payload)
+            if attached:
+                print(f"[POSTS] → Added {attached} media attachment(s) to existing post")
             continue
         
         try:
@@ -1232,6 +1347,10 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
             )
             db.session.add(association)
             db.session.flush()  # Ensure association is added before continuing
+
+            attached = _attach_media_to_post(post, media_payload)
+            if attached:
+                print(f"[POSTS] → Captured {attached} media attachment(s)")
             posts_added += 1
             print(f"[POSTS] → ✓ Added to DB with association (sent_time: {sent_time})")
         except Exception as e:
@@ -4185,7 +4304,7 @@ def get_posts():
             display_date = post.scheduled_time or post.sent_time or post.created_at
             print(f"[GET /api/posts] Post {post.id}: status={post.status}, date={display_date}, pages={len(pages_info)}")
             
-            normalized_status = 'scheduled' if post.status == 'publishing' else post.status
+            normalized_status = normalize_post_status_value(post.status)
             posts_data.append({
                 'id': post.id,
                 'caption': post.caption,
