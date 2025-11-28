@@ -372,6 +372,24 @@
         };
     }
 
+    function normalizePostStatus(status) {
+        const normalized = (status || 'draft').toLowerCase();
+        if (normalized === 'publishing') return 'scheduled';
+        if (normalized === 'published') return 'sent';
+        return normalized;
+    }
+
+    function formatStatusLabel(status) {
+        const normalized = (status || 'draft').toLowerCase();
+        if (normalized === 'sent' || normalized === 'published') {
+            return 'Published';
+        }
+        if (normalized === 'publishing') {
+            return 'Publishing';
+        }
+        return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    }
+
     function buildImportMetaFromJob(job) {
         if (!job) {
             return { ...DEFAULT_IMPORT_META };
@@ -477,7 +495,10 @@
             'twitter': 'fab fa-twitter',
             'linkedin': 'fab fa-linkedin'
         };
-        return icons[platform.toLowerCase()] || 'fas fa-share-alt';
+        if (!platform) {
+            return 'fas fa-share-alt';
+        }
+        return icons[String(platform).toLowerCase()] || 'fas fa-share-alt';
     }
 
     // Month navigation
@@ -558,18 +579,21 @@
     // Create post badge HTML
     function createPostBadge(post) {
         const dateStr = post.scheduled_time || post.sent_time;
-        const time = formatTime(dateStr);
-        const status = post.status || 'draft';
-        
-        // Get up to 2 platform icons
-        const platforms = [...new Set(post.pages.map(p => p.platform))].slice(0, 2);
+        const time = dateStr ? formatTime(dateStr) : '--:--';
+        const normalizedStatus = normalizePostStatus(post.status);
+
+        const pages = Array.isArray(post.pages) ? post.pages : [];
+        const platforms = [...new Set(pages.map(p => p.platform).filter(Boolean))].slice(0, 2);
+        const platformsHtml = platforms.length
+            ? platforms.map(platform => `<i class="${getPlatformIcon(platform)}"></i>`).join('')
+            : '<i class="fas fa-share-alt"></i>';
         
         const html = `
-            <div class="post-badge ${status}" data-post-id="${post.id}" onclick="showPostDetail(${post.id})">
+            <div class="post-badge ${normalizedStatus}" data-post-id="${post.id}" onclick="showPostDetail(${post.id})">
                 <span class="badge-time">${time}</span>
-                <span class="badge-dot ${status}"></span>
+                <span class="badge-dot ${normalizedStatus}"></span>
                 <div class="badge-platforms">
-                    ${platforms.map(platform => `<i class="${getPlatformIcon(platform)}"></i>`).join('')}
+                    ${platformsHtml}
                 </div>
             </div>
         `;
@@ -753,10 +777,10 @@
             return;
         }
         
-        const status = post.status || 'draft';
+        const normalizedStatus = normalizePostStatus(post.status);
         
         // Show different modal based on status
-        if (status === 'sent') {
+        if (normalizedStatus === 'sent') {
             // Published post - show new detailed modal
             showPublishedPostDetail(post);
         } else {
@@ -902,7 +926,9 @@
             }
             
             const dateTime = formatDateTimeVietnam(dateStr);
-            const status = post.status || 'draft';
+            const rawStatus = post.status || 'draft';
+            const statusClass = normalizePostStatus(rawStatus);
+            const statusLabel = formatStatusLabel(rawStatus);
             
             const detailModal = document.getElementById('postDetailModal');
             if (!detailModal) {
@@ -911,21 +937,24 @@
             }
             
             // Populate modal with post data
-            document.getElementById('postDetailTitle').textContent = post.caption.substring(0, 50) + (post.caption.length > 50 ? '...' : '');
-            document.getElementById('postDetailCaption').textContent = post.caption;
+            const caption = post.caption || '';
+            const detailTitle = caption ? `${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}` : 'Scheduled Post';
+            document.getElementById('postDetailTitle').textContent = detailTitle;
+            document.getElementById('postDetailCaption').textContent = caption;
             document.getElementById('postDetailTime').textContent = dateTime.dateTime;
-            document.getElementById('postDetailStatus').textContent = status.charAt(0).toUpperCase() + status.slice(1);
-            document.getElementById('postDetailStatus').className = `post-status-badge ${status}`;
+            document.getElementById('postDetailStatus').textContent = statusLabel;
+            document.getElementById('postDetailStatus').className = `post-status-badge ${statusClass}`;
             
             // Show pages with improved styling
-            const pagesHtml = post.pages.map(p => `
+            const pages = Array.isArray(post.pages) ? post.pages : [];
+            const pagesHtml = pages.map(p => `
                 <div class="post-detail-page">
                     <span class="post-detail-page-icon">
                         <i class="${getPlatformIcon(p.platform)}"></i>
                     </span>
                     <div class="post-detail-page-info">
-                        <span class="post-detail-page-name">${p.name}</span>
-                        <span class="post-detail-page-platform">${p.platform}</span>
+                        <span class="post-detail-page-name">${p.name || 'Connected Page'}</span>
+                        <span class="post-detail-page-platform">${p.platform || 'Unknown'}</span>
                     </div>
                 </div>
             `).join('');
