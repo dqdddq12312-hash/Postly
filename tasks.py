@@ -744,39 +744,56 @@ def daily_analytics_refresh():
 
 
 def setup_scheduler():
-    """
-    Setup APScheduler to run analytics refresh periodically and check scheduled posts
-    Call this from your Flask app initialization
-    """
+    """Configure and start the APScheduler instance used by the worker."""
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.interval import IntervalTrigger
         from apscheduler.triggers.cron import CronTrigger
-        
-        scheduler = BackgroundScheduler()
-        
-        # Run daily analytics refresh at 2 AM UTC every day
+        from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
+
+        def _scheduler_listener(event):
+            if event.code == EVENT_JOB_MISSED:
+                logger.warning("Scheduler missed job %s", getattr(event, 'job_id', 'unknown'))
+            elif event.code == EVENT_JOB_ERROR:
+                logger.error(
+                    "Scheduler job %s raised an exception: %s",
+                    getattr(event, 'job_id', 'unknown'),
+                    event.exception,
+                )
+
+        scheduler = BackgroundScheduler(
+            job_defaults={'max_instances': 1, 'coalesce': True, 'misfire_grace_time': 120},
+            timezone="UTC",
+        )
+
+        scheduler.add_listener(_scheduler_listener, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+
         scheduler.add_job(
             func=daily_analytics_refresh,
             trigger=CronTrigger(hour=2, minute=0),
             id='daily_analytics_refresh',
             name='Daily analytics refresh for all users',
-            replace_existing=True
+            replace_existing=True,
         )
-        
-        # Check for scheduled posts every minute
+
         scheduler.add_job(
             func=check_and_publish_scheduled_posts,
             trigger=IntervalTrigger(minutes=1),
             id='check_scheduled_posts',
             name='Check and publish scheduled posts',
-            replace_existing=True
+            replace_existing=True,
+            max_instances=1,
         )
-        
+
         scheduler.start()
-        logger.info("Scheduler started: daily analytics refresh at 2 AM UTC, scheduled posts check every minute")
-        
+        logger.info(
+            "Scheduler started with %d job(s); analytics @02:00 UTC, scheduled post scan every minute",
+            len(scheduler.get_jobs()),
+        )
+        return scheduler
+
     except ImportError:
         logger.warning("APScheduler not installed. Automatic tasks will not run.")
     except Exception as e:
         logger.error(f"Error setting up scheduler: {e}")
+    return None
