@@ -70,6 +70,7 @@ ANALYTICS_REFRESH_AUTO_THRESHOLD = int(os.getenv('ANALYTICS_REFRESH_AUTO_THRESHO
 SELF_CRON_ENABLED = os.getenv('ENABLE_SELF_CRON', 'true').lower() == 'true'
 SELF_CRON_INTERVAL = int(os.getenv('SELF_CRON_INTERVAL_SECONDS', '60'))
 self_cron_runner = None
+_self_cron_started = False
 
 
 # ======================== DATABASE MODELS ========================
@@ -2522,6 +2523,8 @@ def initialize_database():
     
     # Only run once
     if _db_initialized:
+        if not _self_cron_started:
+            _ensure_self_cron_started()
         return
     
     try:
@@ -2533,6 +2536,7 @@ def initialize_database():
         if 'user' in tables:
             _db_initialized = True
             print("[DB] ✓ Database tables already exist")
+            _ensure_self_cron_started()
             return
         
         # Tables don't exist, create them
@@ -2540,9 +2544,11 @@ def initialize_database():
         db.create_all()
         
         # Verify tables were created
+        inspector = inspect(db.engine)
         tables = inspector.get_table_names()
         print(f"[DB] ✓ Created {len(tables)} tables: {', '.join(tables)}")
         _db_initialized = True
+        _ensure_self_cron_started()
         
     except Exception as e:
         print(f"[DB] ✗ Failed to initialize database: {e}")
@@ -5427,11 +5433,11 @@ def internal_error(_):
 
 def _ensure_self_cron_started():
     """Start the background scheduler once the module has initialized."""
-    global self_cron_runner
+    global self_cron_runner, _self_cron_started
     if not SELF_CRON_ENABLED:
         logger.info("SelfCron disabled via ENABLE_SELF_CRON env var")
         return
-    if self_cron_runner is not None:
+    if _self_cron_started:
         return
 
     try:
@@ -5441,11 +5447,10 @@ def _ensure_self_cron_started():
         self_cron_runner.start()
         atexit.register(self_cron_runner.stop)
         logger.info("SelfCron scheduler started (interval=%ss)", SELF_CRON_INTERVAL)
+        _self_cron_started = True
     except Exception as cron_exc:
         logger.error(f"Failed to start SelfCron scheduler: {cron_exc}")
 
-
-_ensure_self_cron_started()
 
 
 # ======================== APPLICATION ENTRY POINT ========================
