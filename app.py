@@ -1057,10 +1057,8 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         # Try different field combinations, prioritizing useful data
         # Start with minimal, but ensure we get at least created_time for useful posts
         field_sets = [
-            'id,message,caption,created_time,type,permalink_url,full_picture,attachments{media_type,media,url,subattachments,target}',
-            'id,message,caption,created_time,type,permalink_url,full_picture',
-            'id,message,created_time',
-            'id,created_time'
+            'id,created_time',
+            'id,message,created_time'
         ]
         
         endpoints = [
@@ -1186,6 +1184,37 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         return []
 
 
+def _fetch_facebook_post_fields(post_id, access_token, fields):
+    """Fetch specific fields for a Facebook post ID, returning JSON dict."""
+    if not post_id or not access_token or not fields:
+        return {}
+
+    url = f"https://graph.facebook.com/v18.0/{post_id}"
+    params = {
+        'fields': fields,
+        'access_token': access_token
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"[POSTS] Error fetching post fields for {post_id}: {exc}")
+        return {}
+
+    if response.status_code != 200:
+        try:
+            error_json = response.json()
+        except ValueError:
+            error_json = {'message': response.text}
+        print(f"[POSTS] Error fetching post fields for {post_id}: {error_json}")
+        return {}
+
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
 def _extract_media_from_facebook_post(post_data):
     """Return a list of media payloads extracted from a Facebook post response."""
     media_items = []
@@ -1264,26 +1293,25 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
         post_id = post_data.get('id', '')
         print(f"[POSTS] Processing post: {post_id}")
         print(f"[POSTS] Post data keys: {list(post_data.keys())}")
-        media_payload = _extract_media_from_facebook_post(post_data)
-        
-        # If message is missing, fetch it separately
+
+        access_token = connected_page.page_access_token
+        detail_data = {}
+        if post_id and access_token:
+            detail_fields = (
+                'message,caption,permalink_url,full_picture,'
+                'attachments{media_type,media,url,subattachments{media,url},target}'
+            )
+            detail_data = _fetch_facebook_post_fields(post_id, access_token, detail_fields)
+            for key in ['message', 'caption', 'permalink_url', 'full_picture', 'attachments']:
+                if not post_data.get(key) and detail_data.get(key):
+                    post_data[key] = detail_data[key]
+
         message = post_data.get('message') or post_data.get('caption')
-        if not message and post_id:
-            print(f"[POSTS] No message found, fetching separately...")
-            try:
-                access_token = connected_page.page_access_token
-                detail_url = f"https://graph.facebook.com/v18.0/{post_id}"
-                detail_params = {
-                    'fields': 'message',
-                    'access_token': access_token
-                }
-                detail_response = requests.get(detail_url, params=detail_params, timeout=10)
-                if detail_response.status_code == 200:
-                    detail_data = detail_response.json()
-                    message = detail_data.get('message')
-                    print(f"[POSTS] Fetched message separately: {message[:50] if message else 'None'}...")
-            except Exception as e:
-                print(f"[POSTS] Error fetching message separately: {e}")
+        if not message and detail_data.get('message'):
+            message = detail_data.get('message')
+            print(f"[POSTS] Fetched message separately: {message[:50]}...")
+
+        media_payload = _extract_media_from_facebook_post(post_data)
         
         # Check if post already exists by checking both Facebook ID and user
         existing_post = Post.query.filter_by(
