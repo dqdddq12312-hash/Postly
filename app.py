@@ -3819,6 +3819,19 @@ def delete_connected_page(page_id):
         
         page_name = page.page_name
         print(f"[DELETE PAGE] Starting deletion of page {page_id} ({page_name})")
+
+        # Remove background jobs that still reference this page to avoid FK violations
+        import_jobs = PageImportJob.query.filter_by(page_id=page_id).all()
+        print(f"[DELETE PAGE] Found {len(import_jobs)} import jobs")
+        for job in import_jobs:
+            db.session.delete(job)
+            print(f"[DELETE PAGE] Deleted import job {job.id}")
+
+        refresh_jobs = AnalyticsRefreshJob.query.filter_by(page_id=page_id).all()
+        print(f"[DELETE PAGE] Found {len(refresh_jobs)} analytics refresh jobs")
+        for job in refresh_jobs:
+            db.session.delete(job)
+            print(f"[DELETE PAGE] Deleted analytics refresh job {job.id}")
         
         # Delete channel access records for this page
         channel_access_records = ChannelAccess.query.filter_by(channel_id=page_id).all()
