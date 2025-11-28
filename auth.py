@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from dotenv import load_dotenv
 import requests
-from flask import session, redirect, url_for, flash
+from flask import session, redirect, url_for, flash, g
 
 load_dotenv()
 
@@ -168,6 +168,10 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             flash('Please log in to access this page', 'warning')
+            return redirect(url_for('login'))
+        if not getattr(g, 'current_user', None):
+            flash('Your session has expired. Please log in again.', 'warning')
+            session.clear()
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
