@@ -5427,15 +5427,6 @@ if __name__ == '__main__':
     # Initialize database
     init_db()
     
-    # Setup background scheduler for analytics
-    try:
-        from tasks import setup_scheduler
-        setup_scheduler()
-    except ImportError:
-        print("Warning: APScheduler not installed. Install with: pip install apscheduler")
-    except Exception as e:
-        print(f"Warning: Could not setup scheduler: {e}")
-    
     # Use environment variable for port (for cloud deployment)
     port = int(os.getenv('PORT', 5000))
     debug = os.getenv('FLASK_ENV') != 'production'
