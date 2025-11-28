@@ -1151,8 +1151,10 @@ body.publish-page .page-avatar-platform {
     flex-shrink: 0;
 }
 
-.badge-dot.scheduled { background-color: #ffa500; }
-.badge-dot.sent { background-color: var(--success-green); }
+.badge-dot.scheduled,
+.badge-dot.publishing { background-color: #ffa500; }
+.badge-dot.sent,
+.badge-dot.published { background-color: var(--success-green); }
 .badge-dot.draft { background-color: var(--medium-gray); }
 
 .badge-platforms {
@@ -1493,12 +1495,14 @@ body.publish-page .post-status-badge {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
-body.publish-page .post-status-badge.scheduled {
+body.publish-page .post-status-badge.scheduled,
+body.publish-page .post-status-badge.publishing {
     background: rgba(255, 184, 77, 0.22);
     color: #ffd79a;
 }
 
-body.publish-page .post-status-badge.sent {
+body.publish-page .post-status-badge.sent,
+body.publish-page .post-status-badge.published {
     background: rgba(58, 214, 162, 0.25);
     color: #b1ffe0;
 }
@@ -1604,12 +1608,14 @@ body.publish-page .post-status-badge.draft {
     text-transform: capitalize;
 }
 
-.post-status-badge.scheduled {
+.post-status-badge.scheduled,
+.post-status-badge.publishing {
     background-color: rgba(255, 165, 0, 0.15);
     color: #cc8800;
 }
 
-.post-status-badge.sent {
+.post-status-badge.sent,
+.post-status-badge.published {
     background-color: rgba(46, 164, 79, 0.15);
     color: #2e7d32;
 }
