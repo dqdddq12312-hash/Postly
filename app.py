@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort, send_from_directory
+import atexit
 import os
 import tempfile
 import logging
@@ -66,6 +67,9 @@ ENABLE_TIKTOK_DEMO = os.getenv('ENABLE_TIKTOK_DEMO', 'false').lower() == 'true'
 PAGE_HISTORY_IMPORT_LIMIT = int(os.getenv('PAGE_HISTORY_IMPORT_LIMIT', '200'))
 ANALYTICS_REFRESH_DEFAULT_BATCH = int(os.getenv('ANALYTICS_REFRESH_DEFAULT_BATCH', '25'))
 ANALYTICS_REFRESH_AUTO_THRESHOLD = int(os.getenv('ANALYTICS_REFRESH_AUTO_THRESHOLD', '1'))
+SELF_CRON_ENABLED = os.getenv('ENABLE_SELF_CRON', 'true').lower() == 'true'
+SELF_CRON_INTERVAL = int(os.getenv('SELF_CRON_INTERVAL_SECONDS', '60'))
+self_cron_runner = None
 
 
 # ======================== DATABASE MODELS ========================
@@ -5421,11 +5425,43 @@ def internal_error(_):
     return redirect(url_for('index')), 500
 
 
+def _ensure_self_cron_started():
+    """Start the background scheduler once the module has initialized."""
+    global self_cron_runner
+    if not SELF_CRON_ENABLED:
+        logger.info("SelfCron disabled via ENABLE_SELF_CRON env var")
+        return
+    if self_cron_runner is not None:
+        return
+
+    try:
+        from self_cron import create_self_cron
+
+        self_cron_runner = create_self_cron(app, SELF_CRON_INTERVAL)
+        self_cron_runner.start()
+        atexit.register(self_cron_runner.stop)
+        logger.info("SelfCron scheduler started (interval=%ss)", SELF_CRON_INTERVAL)
+    except Exception as cron_exc:
+        logger.error(f"Failed to start SelfCron scheduler: {cron_exc}")
+
+
+_ensure_self_cron_started()
+
+
 # ======================== APPLICATION ENTRY POINT ========================
 
 if __name__ == '__main__':
     # Initialize database
     init_db()
+    
+    # Setup background scheduler for analytics
+    try:
+        from tasks import setup_scheduler
+        setup_scheduler()
+    except ImportError:
+        print("Warning: APScheduler not installed. Install with: pip install apscheduler")
+    except Exception as e:
+        print(f"Warning: Could not setup scheduler: {e}")
     
     # Use environment variable for port (for cloud deployment)
     port = int(os.getenv('PORT', 5000))
