@@ -1184,35 +1184,70 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         return []
 
 
+FACEBOOK_ATTACHMENT_FIELD_BLOCK = 'attachments{media_type,media,url,subattachments{media,url},target}'
+
+
+def _strip_facebook_attachment_fields(field_str):
+    cleaned = field_str.replace(f",{FACEBOOK_ATTACHMENT_FIELD_BLOCK}", '')
+    cleaned = cleaned.replace(f"{FACEBOOK_ATTACHMENT_FIELD_BLOCK},", '')
+    cleaned = cleaned.replace(FACEBOOK_ATTACHMENT_FIELD_BLOCK, '')
+    cleaned = cleaned.strip(', ')
+    if not cleaned:
+        return ''
+    parts = [segment.strip() for segment in cleaned.split(',') if segment.strip()]
+    return ','.join(parts)
+
+
+def _is_attachment_deprecation_error(error_json):
+    error_block = (error_json or {}).get('error') or {}
+    message = (error_block.get('message') or '').lower()
+    return error_block.get('code') == 12 and 'deprecate_post_aggregated_fields_for_attachement' in message
+
+
 def _fetch_facebook_post_fields(post_id, access_token, fields):
     """Fetch specific fields for a Facebook post ID, returning JSON dict."""
     if not post_id or not access_token or not fields:
         return {}
 
     url = f"https://graph.facebook.com/v18.0/{post_id}"
-    params = {
-        'fields': fields,
-        'access_token': access_token
-    }
+    attempted_without_attachments = False
+    current_fields = fields
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-    except Exception as exc:  # pylint: disable=broad-except
-        print(f"[POSTS] Error fetching post fields for {post_id}: {exc}")
-        return {}
+    while current_fields:
+        params = {
+            'fields': current_fields,
+            'access_token': access_token
+        }
 
-    if response.status_code != 200:
+        try:
+            response = requests.get(url, params=params, timeout=10)
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"[POSTS] Error fetching post fields for {post_id}: {exc}")
+            return {}
+
+        if response.status_code == 200:
+            try:
+                return response.json()
+            except ValueError:
+                return {}
+
         try:
             error_json = response.json()
         except ValueError:
             error_json = {'message': response.text}
+
         print(f"[POSTS] Error fetching post fields for {post_id}: {error_json}")
+
+        if (not attempted_without_attachments and 'attachments{' in current_fields \
+                and _is_attachment_deprecation_error(error_json)):
+            attempted_without_attachments = True
+            current_fields = _strip_facebook_attachment_fields(current_fields)
+            print("[POSTS] Facebook deprecated aggregated attachments; retrying without attachment fields")
+            continue
+
         return {}
 
-    try:
-        return response.json()
-    except ValueError:
-        return {}
+    return {}
 
 
 def _extract_media_from_facebook_post(post_data):
