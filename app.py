@@ -4,7 +4,9 @@ import os
 import tempfile
 import logging
 import threading
+from contextlib import contextmanager
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import sessionmaker
 from utils.performance_monitor import monitor_performance, log_cache_hit, PerformanceTimer
 from sqlalchemy import func, inspect
 from dotenv import load_dotenv
@@ -57,6 +59,29 @@ if database_url and database_url.startswith('postgres://'):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or f"sqlite:///{os.path.join(BASE_DIR, 'fb_tokens.db')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+IS_SQLITE_BACKEND = app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite:')
+if IS_SQLITE_BACKEND:
+    engine_options = app.config.setdefault('SQLALCHEMY_ENGINE_OPTIONS', {})
+    connect_args = engine_options.setdefault('connect_args', {})
+    connect_args.setdefault('timeout', 30)
+DB_WRITE_LOCK = threading.RLock()
+
+
+@contextmanager
+def serialized_db_writer(section='general'):
+    """Serialize SQLite writes to avoid database lock errors during concurrent jobs."""
+    if not IS_SQLITE_BACKEND:
+        yield
+        return
+
+    DB_WRITE_LOCK.acquire()
+    try:
+        yield
+    finally:
+        DB_WRITE_LOCK.release()
+
+
 db = SQLAlchemy(app)
 
 
@@ -749,47 +774,62 @@ def _run_page_import_job(job_id):
             return
 
         job.status = 'running'
-        job.started_at = datetime.utcnow()
+        job.started_at = _get_utc_now()
         job.error_message = None
-        db.session.commit()
+        _commit_with_retry()
 
         page = ConnectedPage.query.get(job.page_id)
         if not page:
             job.status = 'failed'
             job.error_message = 'Connected page not found'
-            job.finished_at = datetime.utcnow()
-            db.session.commit()
+            job.finished_at = _get_utc_now()
+            try:
+                _commit_with_retry()
+            except Exception as exc:
+                print(f"[IMPORT] Failed to update missing page job: {exc}")
             return
 
         if not page.page_access_token:
             job.status = 'failed'
             job.error_message = 'Page access token missing'
-            job.finished_at = datetime.utcnow()
-            db.session.commit()
+            job.finished_at = _get_utc_now()
+            try:
+                _commit_with_retry()
+            except Exception as exc:
+                print(f"[IMPORT] Failed to update missing token job: {exc}")
             return
 
         try:
             platform_name = (page.platform or '').lower()
             max_posts = job.max_posts or PAGE_HISTORY_IMPORT_LIMIT
+            posts_imported = 0
+            total_posts_found = 0
+
             if platform_name == 'facebook':
                 posts_data = get_facebook_page_posts(page.platform_page_id, page.page_access_token, max_posts=max_posts)
-                job.total_posts_found = len(posts_data)
-                posts_imported = store_facebook_posts_to_db(job.user_id, page, posts_data)
+                total_posts_found = len(posts_data)
+                with db.session.no_autoflush:
+                    posts_imported = store_facebook_posts_to_db(job.user_id, page, posts_data)
             elif platform_name == 'tiktok':
                 posts_data = list_tiktok_posts(page.platform_page_id, page.page_access_token, max_pages=1)
-                job.total_posts_found = len(posts_data)
-                posts_imported = store_tiktok_posts_to_db(job.user_id, page, posts_data)
+                total_posts_found = len(posts_data)
+                with db.session.no_autoflush:
+                    posts_imported = store_tiktok_posts_to_db(job.user_id, page, posts_data)
             else:
                 raise ValueError(f"Platform '{platform_name}' not supported for history import")
 
+            job.total_posts_found = total_posts_found
             job.posts_imported = posts_imported
             job.status = 'completed'
         except Exception as exc:
             job.status = 'failed'
             job.error_message = str(exc)
         finally:
-            job.finished_at = datetime.utcnow()
-            db.session.commit()
+            job.finished_at = _get_utc_now()
+            try:
+                _commit_with_retry(max_retries=6, wait_base=0.75)
+            except Exception as exc:
+                print(f"[IMPORT] Failed to finalize job: {exc}")
 
 
 # ======================== ANALYTICS REFRESH HELPERS ========================
@@ -800,7 +840,7 @@ def _safe_count_posts_pending_refresh(user_id, page_id=None):
         from tasks import count_posts_needing_refresh as _count_posts
         return _count_posts(user_id, page_id)
     except Exception as exc:
-        logger.warning(f"Unable to count posts needing refresh: {exc}")
+        logger.warning("Unable to count posts needing refresh: %s", exc)
         return 0
 
 
@@ -854,9 +894,9 @@ def _run_analytics_refresh_job(job_id):
             return
 
         job.status = 'running'
-        job.started_at = datetime.utcnow()
+        job.started_at = _get_utc_now()
         job.error_message = None
-        job.last_progress_at = datetime.utcnow()
+        job.last_progress_at = _get_utc_now()
         db.session.commit()
 
         try:
@@ -871,7 +911,7 @@ def _run_analytics_refresh_job(job_id):
 
             if total_posts == 0:
                 job.status = 'completed'
-                job.finished_at = datetime.utcnow()
+                job.finished_at = _get_utc_now()
                 db.session.commit()
                 return
 
@@ -884,7 +924,7 @@ def _run_analytics_refresh_job(job_id):
                 job.processed += processed
                 job.failed += result.get('failed', 0)
                 job.skipped += result.get('skipped', 0)
-                job.last_progress_at = datetime.utcnow()
+                job.last_progress_at = _get_utc_now()
                 remaining = max(0, remaining - processed)
                 db.session.commit()
 
@@ -897,7 +937,7 @@ def _run_analytics_refresh_job(job_id):
             job.status = 'failed'
             job.error_message = str(exc)
         finally:
-            job.finished_at = datetime.utcnow()
+            job.finished_at = _get_utc_now()
             db.session.commit()
 
 
@@ -1051,10 +1091,39 @@ def normalize_post_status_value(status):
     return normalized
 
 
-def get_post_history_cutoff():
-    """Return the datetime threshold for retaining historical posts (UTC, timezone-aware)."""
+def _get_utc_now():
+    """Get current UTC time as naive datetime (for backward compatibility with existing code)."""
     from datetime import timezone
-    return datetime.now(timezone.utc) - timedelta(days=POST_HISTORY_RETENTION_DAYS)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _commit_with_retry(max_retries=3, wait_base=0.5):
+    """Commit the current session, retrying on transient SQLite locks."""
+    import time
+
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            with serialized_db_writer('commit'):
+                db.session.commit()
+            return True
+        except Exception as exc:
+            last_exc = exc
+            if db.session.is_active:
+                db.session.rollback()
+            if 'database is locked' in str(exc).lower() and attempt < max_retries - 1:
+                time.sleep(wait_base * (2 ** attempt))
+                continue
+            break
+
+    if last_exc:
+        raise last_exc
+    return False
+
+
+def get_post_history_cutoff():
+    """Return the datetime threshold for retaining historical posts (naive UTC)."""
+    return _get_utc_now() - timedelta(days=POST_HISTORY_RETENTION_DAYS)
 
 
 def _parse_fb_timestamp(timestamp):
@@ -1121,8 +1190,8 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         # Try different field combinations, prioritizing useful data
         # Start with minimal, but ensure we get at least created_time for useful posts
         field_sets = [
-            'id,created_time',
-            'id,message,created_time'
+            'id,created_time,message,caption',
+            'id,created_time,message,caption,permalink_url,full_picture'
         ]
         
         endpoints = [
@@ -1262,70 +1331,36 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
         return []
 
 
-FACEBOOK_ATTACHMENT_FIELD_BLOCK = 'attachments{media_type,media,url,subattachments{media,url},target}'
+def _fetch_facebook_post_attachments(post_id, access_token):
+    """Fetch attachment metadata for a Facebook post via the attachments edge."""
+    if not post_id or not access_token:
+        return []
 
+    url = f"https://graph.facebook.com/v18.0/{post_id}/attachments"
+    params = {
+        'access_token': access_token,
+        'fields': 'media_type,media,url,target,subattachments{media_type,media,url,target}'
+    }
 
-def _strip_facebook_attachment_fields(field_str):
-    cleaned = field_str.replace(f",{FACEBOOK_ATTACHMENT_FIELD_BLOCK}", '')
-    cleaned = cleaned.replace(f"{FACEBOOK_ATTACHMENT_FIELD_BLOCK},", '')
-    cleaned = cleaned.replace(FACEBOOK_ATTACHMENT_FIELD_BLOCK, '')
-    cleaned = cleaned.strip(', ')
-    if not cleaned:
-        return ''
-    parts = [segment.strip() for segment in cleaned.split(',') if segment.strip()]
-    return ','.join(parts)
+    try:
+        response = requests.get(url, params=params, timeout=10)
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"[POSTS] Error fetching attachments for {post_id}: {exc}")
+        return []
 
-
-def _is_attachment_deprecation_error(error_json):
-    error_block = (error_json or {}).get('error') or {}
-    message = (error_block.get('message') or '').lower()
-    return error_block.get('code') == 12 and 'deprecate_post_aggregated_fields_for_attachement' in message
-
-
-def _fetch_facebook_post_fields(post_id, access_token, fields):
-    """Fetch specific fields for a Facebook post ID, returning JSON dict."""
-    if not post_id or not access_token or not fields:
-        return {}
-
-    url = f"https://graph.facebook.com/v18.0/{post_id}"
-    attempted_without_attachments = False
-    current_fields = fields
-
-    while current_fields:
-        params = {
-            'fields': current_fields,
-            'access_token': access_token
-        }
-
-        try:
-            response = requests.get(url, params=params, timeout=10)
-        except Exception as exc:  # pylint: disable=broad-except
-            print(f"[POSTS] Error fetching post fields for {post_id}: {exc}")
-            return {}
-
-        if response.status_code == 200:
-            try:
-                return response.json()
-            except ValueError:
-                return {}
-
+    if response.status_code != 200:
         try:
             error_json = response.json()
         except ValueError:
             error_json = {'message': response.text}
+        print(f"[POSTS] Attachment fetch failed for {post_id}: {error_json}")
+        return []
 
-        print(f"[POSTS] Error fetching post fields for {post_id}: {error_json}")
-
-        if (not attempted_without_attachments and 'attachments{' in current_fields \
-                and _is_attachment_deprecation_error(error_json)):
-            attempted_without_attachments = True
-            current_fields = _strip_facebook_attachment_fields(current_fields)
-            print("[POSTS] Facebook deprecated aggregated attachments; retrying without attachment fields")
-            continue
-
-        return {}
-
-    return {}
+    try:
+        data = response.json().get('data', [])
+    except ValueError:
+        data = []
+    return data
 
 
 def _extract_media_from_facebook_post(post_data):
@@ -1399,121 +1434,116 @@ def _attach_media_to_post(post, media_items):
 
 def store_facebook_posts_to_db(user_id, connected_page, posts_data):
     """Store Facebook posts to database, avoiding duplicates"""
-    retention_cutoff = get_post_history_cutoff()
-    print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name} (cutoff {retention_cutoff.date()})")
-    posts_added = 0
-    
-    for post_data in posts_data:
-        post_id = post_data.get('id', '')
-        print(f"[POSTS] Processing post: {post_id}")
-        print(f"[POSTS] Post data keys: {list(post_data.keys())}")
-
-        access_token = connected_page.page_access_token
-        detail_data = {}
-        if post_id and access_token:
-            detail_fields = (
-                'message,caption,permalink_url,full_picture,'
-                'attachments{media_type,media,url,subattachments{media,url},target}'
-            )
-            detail_data = _fetch_facebook_post_fields(post_id, access_token, detail_fields)
-            for key in ['message', 'caption', 'permalink_url', 'full_picture', 'attachments']:
-                if not post_data.get(key) and detail_data.get(key):
-                    post_data[key] = detail_data[key]
-
-        created_dt = _parse_fb_timestamp(post_data.get('created_time'))
-        if created_dt and created_dt < retention_cutoff:
-            print(f"[POSTS] Skipping post {post_id} (created {created_dt}) beyond retention window")
-            continue
-
-        message = post_data.get('message') or post_data.get('caption')
-        if not message and detail_data.get('message'):
-            message = detail_data.get('message')
-            print(f"[POSTS] Fetched message separately: {message[:50]}...")
-
-        media_payload = _extract_media_from_facebook_post(post_data)
+    def _store():
+        retention_cutoff = get_post_history_cutoff()
+        print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name} (cutoff {retention_cutoff.date()})")
+        posts_added = 0
         
-        # Check if post already exists by checking both Facebook ID and user
-        existing_post = Post.query.filter_by(
-            user_id=user_id,
-            title=post_id
-        ).first()
-        
-        if existing_post:
-            print(f"[POSTS] → Post already exists in DB (Post ID: {existing_post.id}, Caption: '{existing_post.caption[:30] if existing_post.caption else 'No caption'}...', Status: {existing_post.status})")
-            # Check if association exists, if not create it
-            existing_assoc = PostPageAssociation.query.filter_by(
-                post_id=existing_post.id,
-                page_id=connected_page.id
+        for post_data in posts_data:
+            post_id = post_data.get('id', '')
+            print(f"[POSTS] Processing post: {post_id}")
+            print(f"[POSTS] Post data keys: {list(post_data.keys())}")
+
+            access_token = connected_page.page_access_token
+            if post_id and access_token and not post_data.get('attachments'):
+                attachments_data = _fetch_facebook_post_attachments(post_id, access_token)
+                if attachments_data:
+                    post_data['attachments'] = {'data': attachments_data}
+
+            created_dt = _parse_fb_timestamp(post_data.get('created_time'))
+            if created_dt and created_dt < retention_cutoff:
+                print(f"[POSTS] Skipping post {post_id} (created {created_dt}) beyond retention window")
+                continue
+
+            message = post_data.get('message') or post_data.get('caption')
+
+            media_payload = _extract_media_from_facebook_post(post_data)
+            
+            # Check if post already exists by checking both Facebook ID and user
+            existing_post = Post.query.filter_by(
+                user_id=user_id,
+                title=post_id
             ).first()
-            if not existing_assoc:
-                print(f"[POSTS] → Creating missing association for existing post")
-                association = PostPageAssociation(
+            
+            if existing_post:
+                print(f"[POSTS] → Post already exists in DB (Post ID: {existing_post.id}, Caption: '{existing_post.caption[:30] if existing_post.caption else 'No caption'}...', Status: {existing_post.status})")
+                # Check if association exists, if not create it
+                existing_assoc = PostPageAssociation.query.filter_by(
                     post_id=existing_post.id,
+                    page_id=connected_page.id
+                ).first()
+                if not existing_assoc:
+                    print(f"[POSTS] → Creating missing association for existing post")
+                    association = PostPageAssociation(
+                        post_id=existing_post.id,
+                        page_id=connected_page.id,
+                        platform_post_id=post_id,
+                        status='sent'
+                    )
+                    db.session.add(association)
+                    posts_added += 1
+                else:
+                    print(f"[POSTS] → Association already exists (Assoc ID: {existing_assoc.id}, Platform Post ID: {existing_assoc.platform_post_id})")
+
+                attached = _attach_media_to_post(existing_post, media_payload)
+                if attached:
+                    print(f"[POSTS] → Added {attached} media attachment(s) to existing post")
+                continue
+            
+            try:
+                sent_time = created_dt or datetime.utcnow()
+                
+                # Create post from Facebook data
+                # Use fetched message or fallback to generic text
+                content = message or f'Posted on {connected_page.page_name}'
+                post = Post(
+                    user_id=user_id,
+                    title=post_id,
+                    content=content,
+                    caption=message or '',
+                    status='sent',
+                    sent_time=sent_time
+                )
+                db.session.add(post)
+                db.session.flush()
+                
+                # Create page association
+                association = PostPageAssociation(
+                    post_id=post.id,
                     page_id=connected_page.id,
                     platform_post_id=post_id,
                     status='sent'
                 )
                 db.session.add(association)
+                db.session.flush()  # Ensure association is added before continuing
+
+                attached = _attach_media_to_post(post, media_payload)
+                if attached:
+                    print(f"[POSTS] → Captured {attached} media attachment(s)")
                 posts_added += 1
-            else:
-                print(f"[POSTS] → Association already exists (Assoc ID: {existing_assoc.id}, Platform Post ID: {existing_assoc.platform_post_id})")
-
-            attached = _attach_media_to_post(existing_post, media_payload)
-            if attached:
-                print(f"[POSTS] → Added {attached} media attachment(s) to existing post")
-            continue
+                print(f"[POSTS] → ✓ Added to DB with association (sent_time: {sent_time})")
+            except Exception as e:
+                print(f"[POSTS] → ✗ Error storing post: {e}")
+                import traceback
+                traceback.print_exc()
+                db.session.rollback()  # Rollback on error to prevent partial commits
+                continue
         
-        try:
-            sent_time = created_dt or datetime.utcnow()
-            
-            # Create post from Facebook data
-            # Use fetched message or fallback to generic text
-            content = message or f'Posted on {connected_page.page_name}'
-            post = Post(
-                user_id=user_id,
-                title=post_id,
-                content=content,
-                caption=message or '',
-                status='sent',
-                sent_time=sent_time
-            )
-            db.session.add(post)
-            db.session.flush()
-            
-            # Create page association
-            association = PostPageAssociation(
-                post_id=post.id,
-                page_id=connected_page.id,
-                platform_post_id=post_id,
-                status='sent'
-            )
-            db.session.add(association)
-            db.session.flush()  # Ensure association is added before continuing
+        if posts_added > 0:
+            try:
+                _commit_with_retry()
+                print(f"[POSTS] Successfully committed {posts_added} new posts/associations to database")
+            except Exception as e:
+                print(f"[POSTS] → ✗ Error committing to database: {e}")
+                db.session.rollback()
+                return 0
+        else:
+            print(f"[POSTS] No new posts added (all duplicates or errors)")
+        
+        return posts_added
 
-            attached = _attach_media_to_post(post, media_payload)
-            if attached:
-                print(f"[POSTS] → Captured {attached} media attachment(s)")
-            posts_added += 1
-            print(f"[POSTS] → ✓ Added to DB with association (sent_time: {sent_time})")
-        except Exception as e:
-            print(f"[POSTS] → ✗ Error storing post: {e}")
-            import traceback
-            traceback.print_exc()
-            db.session.rollback()  # Rollback on error to prevent partial commits
-            continue
-    
-    if posts_added > 0:
-        try:
-            db.session.commit()
-            print(f"[POSTS] Successfully committed {posts_added} new posts/associations to database")
-        except Exception as e:
-            print(f"[POSTS] → ✗ Error committing to database: {e}")
-            db.session.rollback()
-            return 0
-    else:
-        print(f"[POSTS] No new posts added (all duplicates or errors)")
-    
-    return posts_added
+    with serialized_db_writer('facebook-history-import'):
+        return _store()
 
 
 def normalize_oauth_accounts(platform, raw_accounts, default_access_token=None):
@@ -1539,75 +1569,79 @@ def normalize_oauth_accounts(platform, raw_accounts, default_access_token=None):
 
 def store_tiktok_posts_to_db(user_id, connected_page, posts_data):
     """Store TikTok posts to database, mirroring the Facebook helper."""
-    print(f"[TIKTOK] Storing {len(posts_data)} posts for {connected_page.page_name}")
-    posts_added = 0
+    def _store():
+        print(f"[TIKTOK] Storing {len(posts_data)} posts for {connected_page.page_name}")
+        posts_added = 0
 
-    for post_data in posts_data:
-        platform_post_id = post_data.get('id') or post_data.get('video_id')
-        if not platform_post_id:
-            continue
+        for post_data in posts_data:
+            platform_post_id = post_data.get('id') or post_data.get('video_id')
+            if not platform_post_id:
+                continue
 
-        existing_post = Post.query.filter_by(user_id=user_id, title=platform_post_id).first()
-        if existing_post:
-            assoc = PostPageAssociation.query.filter_by(
-                post_id=existing_post.id,
-                page_id=connected_page.id
-            ).first()
-            if not assoc:
-                db.session.add(PostPageAssociation(
+            existing_post = Post.query.filter_by(user_id=user_id, title=platform_post_id).first()
+            if existing_post:
+                assoc = PostPageAssociation.query.filter_by(
                     post_id=existing_post.id,
-                    page_id=connected_page.id,
-                    platform_post_id=platform_post_id,
-                    status='sent'
-                ))
-                posts_added += 1
-            continue
+                    page_id=connected_page.id
+                ).first()
+                if not assoc:
+                    db.session.add(PostPageAssociation(
+                        post_id=existing_post.id,
+                        page_id=connected_page.id,
+                        platform_post_id=platform_post_id,
+                        status='sent'
+                    ))
+                    posts_added += 1
+                continue
 
-        created_time = post_data.get('create_time') or post_data.get('publish_time')
-        if isinstance(created_time, (int, float)):
-            sent_time = datetime.utcfromtimestamp(created_time)
-        elif isinstance(created_time, str):
-            try:
-                sent_time = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
-            except ValueError:
+            created_time = post_data.get('create_time') or post_data.get('publish_time')
+            if isinstance(created_time, (int, float)):
+                sent_time = datetime.utcfromtimestamp(created_time)
+            elif isinstance(created_time, str):
+                try:
+                    sent_time = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
+                except ValueError:
+                    sent_time = datetime.utcnow()
+            else:
                 sent_time = datetime.utcnow()
+
+            caption = post_data.get('description') or post_data.get('caption')
+            if isinstance(caption, dict):
+                caption = caption.get('text')
+
+            post = Post(
+                user_id=user_id,
+                title=platform_post_id,
+                content=caption or f'TikTok video from {connected_page.page_name}',
+                caption=caption or '',
+                status='sent',
+                sent_time=sent_time
+            )
+            db.session.add(post)
+            db.session.flush()
+
+            db.session.add(PostPageAssociation(
+                post_id=post.id,
+                page_id=connected_page.id,
+                platform_post_id=platform_post_id,
+                status='sent'
+            ))
+            posts_added += 1
+
+        if posts_added:
+            try:
+                _commit_with_retry()
+            except Exception as exc:
+                print(f"[TIKTOK] Error committing posts: {exc}")
+                db.session.rollback()
+                return 0
         else:
-            sent_time = datetime.utcnow()
+            print("[TIKTOK] No new posts stored (duplicates)")
 
-        caption = post_data.get('description') or post_data.get('caption')
-        if isinstance(caption, dict):
-            caption = caption.get('text')
+        return posts_added
 
-        post = Post(
-            user_id=user_id,
-            title=platform_post_id,
-            content=caption or f'TikTok video from {connected_page.page_name}',
-            caption=caption or '',
-            status='sent',
-            sent_time=sent_time
-        )
-        db.session.add(post)
-        db.session.flush()
-
-        db.session.add(PostPageAssociation(
-            post_id=post.id,
-            page_id=connected_page.id,
-            platform_post_id=platform_post_id,
-            status='sent'
-        ))
-        posts_added += 1
-
-    if posts_added:
-        try:
-            db.session.commit()
-        except Exception as exc:
-            print(f"[TIKTOK] Error committing posts: {exc}")
-            db.session.rollback()
-            return 0
-    else:
-        print("[TIKTOK] No new posts stored (duplicates)")
-
-    return posts_added
+    with serialized_db_writer('tiktok-history-import'):
+        return _store()
 
 
 def init_db():
