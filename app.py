@@ -1052,15 +1052,19 @@ def normalize_post_status_value(status):
 
 
 def get_post_history_cutoff():
-    """Return the datetime threshold for retaining historical posts."""
-    return datetime.utcnow() - timedelta(days=POST_HISTORY_RETENTION_DAYS)
+    """Return the datetime threshold for retaining historical posts (UTC, timezone-aware)."""
+    from datetime import timezone
+    return datetime.now(timezone.utc) - timedelta(days=POST_HISTORY_RETENTION_DAYS)
 
 
 def _parse_fb_timestamp(timestamp):
     if not timestamp:
         return None
     try:
-        return datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        return dt
     except Exception:
         return None
 
