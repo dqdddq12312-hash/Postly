@@ -97,6 +97,8 @@ ENABLE_TIKTOK_DEMO = os.getenv('ENABLE_TIKTOK_DEMO', 'false').lower() == 'true'
 PAGE_HISTORY_IMPORT_LIMIT = int(os.getenv('PAGE_HISTORY_IMPORT_LIMIT', '200'))
 ANALYTICS_REFRESH_DEFAULT_BATCH = int(os.getenv('ANALYTICS_REFRESH_DEFAULT_BATCH', '25'))
 ANALYTICS_REFRESH_AUTO_THRESHOLD = int(os.getenv('ANALYTICS_REFRESH_AUTO_THRESHOLD', '1'))
+POST_HISTORY_RETENTION_DAYS = int(os.getenv('POST_HISTORY_RETENTION_DAYS', '30'))
+CALENDAR_POST_LIMIT = int(os.getenv('CALENDAR_POST_LIMIT', '600'))
 SELF_CRON_ENABLED = os.getenv('ENABLE_SELF_CRON', 'true').lower() == 'true'
 SELF_CRON_INTERVAL = int(os.getenv('SELF_CRON_INTERVAL_SECONDS', '60'))
 self_cron_runner = None
@@ -1049,9 +1051,67 @@ def normalize_post_status_value(status):
     return normalized
 
 
+def get_post_history_cutoff():
+    """Return the datetime threshold for retaining historical posts."""
+    return datetime.utcnow() - timedelta(days=POST_HISTORY_RETENTION_DAYS)
+
+
+def _parse_fb_timestamp(timestamp):
+    if not timestamp:
+        return None
+    try:
+        return datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def purge_expired_post_history(batch_size=250):
+    """Delete posts, associations, and analytics older than the retention window."""
+    cutoff = get_post_history_cutoff()
+    stale_posts = Post.query.filter(
+        db.or_(
+            db.and_(Post.sent_time.isnot(None), Post.sent_time < cutoff),
+            db.and_(
+                Post.sent_time.is_(None),
+                Post.scheduled_time.is_(None),
+                Post.created_at < cutoff
+            )
+        )
+    ).order_by(func.coalesce(Post.sent_time, Post.created_at)).limit(batch_size).all()
+
+    if not stale_posts:
+        return 0
+
+    deleted = 0
+    try:
+        for post in stale_posts:
+            assoc_ids = [assoc.id for assoc in post.page_associations]
+            if assoc_ids:
+                PostAnalytics.query.filter(
+                    PostAnalytics.post_page_association_id.in_(assoc_ids)
+                ).delete(synchronize_session=False)
+                PostPageAssociation.query.filter(
+                    PostPageAssociation.id.in_(assoc_ids)
+                ).delete(synchronize_session=False)
+
+            PostMedia.query.filter_by(post_id=post.id).delete()
+            db.session.delete(post)
+            deleted += 1
+
+        db.session.commit()
+        print(f"[RETENTION] Purged {deleted} post(s) older than {cutoff.date()}")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[RETENTION] Error purging posts: {exc}")
+        deleted = 0
+
+    return deleted
+
+
 def get_facebook_page_posts(page_id, access_token, max_posts=None):
     """Fetch historical posts from a Facebook page with optional limit."""
-    print(f"[POSTS] Fetching ALL posts for page {page_id}")
+    retention_cutoff = get_post_history_cutoff()
+    print(f"[POSTS] Fetching posts for page {page_id} with cutoff {retention_cutoff.isoformat()} (UTC)")
     all_posts = []
     try:
         # Try different field combinations, prioritizing useful data
@@ -1141,7 +1201,8 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
             params['fields'] = working_fields
         
         first_request = True
-        while url:
+        cutoff_hit = False
+        while url and not cutoff_hit:
             if first_request:
                 response = requests.get(url, params=params, timeout=15)
                 first_request = False
@@ -1163,8 +1224,18 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
             
             result = response.json()
             posts_data = result.get('data', [])
-            all_posts.extend(posts_data)
-            print(f"[POSTS] Retrieved {len(posts_data)} posts in this batch (total: {len(all_posts)})")
+
+            filtered_batch = []
+            for post in posts_data:
+                created_dt = _parse_fb_timestamp(post.get('created_time'))
+                if created_dt and created_dt < retention_cutoff:
+                    cutoff_hit = True
+                    continue
+                filtered_batch.append(post)
+
+            if filtered_batch:
+                all_posts.extend(filtered_batch)
+            print(f"[POSTS] Retrieved {len(filtered_batch)} usable posts in this batch (total: {len(all_posts)})")
 
             if max_posts and len(all_posts) >= max_posts:
                 all_posts = all_posts[:max_posts]
@@ -1173,6 +1244,9 @@ def get_facebook_page_posts(page_id, access_token, max_posts=None):
             
             paging = result.get('paging', {})
             url = paging.get('next')
+
+        if cutoff_hit:
+            print(f"[POSTS] Stopped pagination at retention cutoff ({retention_cutoff.date()})")
         
         print(f"[POSTS] Total posts retrieved: {len(all_posts)}")
         return all_posts
@@ -1321,7 +1395,8 @@ def _attach_media_to_post(post, media_items):
 
 def store_facebook_posts_to_db(user_id, connected_page, posts_data):
     """Store Facebook posts to database, avoiding duplicates"""
-    print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name}")
+    retention_cutoff = get_post_history_cutoff()
+    print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name} (cutoff {retention_cutoff.date()})")
     posts_added = 0
     
     for post_data in posts_data:
@@ -1340,6 +1415,11 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
             for key in ['message', 'caption', 'permalink_url', 'full_picture', 'attachments']:
                 if not post_data.get(key) and detail_data.get(key):
                     post_data[key] = detail_data[key]
+
+        created_dt = _parse_fb_timestamp(post_data.get('created_time'))
+        if created_dt and created_dt < retention_cutoff:
+            print(f"[POSTS] Skipping post {post_id} (created {created_dt}) beyond retention window")
+            continue
 
         message = post_data.get('message') or post_data.get('caption')
         if not message and detail_data.get('message'):
@@ -1380,12 +1460,7 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
             continue
         
         try:
-            # Parse Facebook's created_time
-            created_time = post_data.get('created_time', '')
-            if created_time:
-                sent_time = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
-            else:
-                sent_time = datetime.utcnow()
+            sent_time = created_dt or datetime.utcnow()
             
             # Create post from Facebook data
             # Use fetched message or fallback to generic text
@@ -1835,14 +1910,28 @@ def publish():
     # This allows team members to see all posts on shared pages they have access to
     accessible_page_ids = [p.id for p in all_pages]
     
-    # Get all posts that were published to any of these pages
+    # Get recent posts only to avoid overwhelming the UI/rendering
+    retention_cutoff = get_post_history_cutoff()
     all_accessible_posts = db.session.query(Post).join(
         PostPageAssociation, Post.id == PostPageAssociation.post_id
     ).filter(
         PostPageAssociation.page_id.in_(accessible_page_ids),
-        Post.status != 'draft'  # Don't show drafts in calendar (except own drafts if needed)
-    ).order_by(Post.scheduled_time.desc()).distinct().all()
+        Post.status != 'draft',
+        db.or_(
+            Post.scheduled_time >= retention_cutoff,
+            Post.sent_time >= retention_cutoff,
+            db.and_(
+                Post.scheduled_time.is_(None),
+                Post.sent_time.is_(None),
+                Post.created_at >= retention_cutoff
+            )
+        )
+    ).order_by(
+        func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at).desc()
+    ).distinct().limit(CALENDAR_POST_LIMIT).all()
     
+    can_publish_directly = any(can_publish_to_channel(user_id, page.id) for page in all_pages)
+
     return render_template('dashboard/publish.html', 
                          pages_by_platform=pages_by_platform,
                          owned_by_platform=owned_by_platform,
@@ -1852,7 +1941,8 @@ def publish():
                          team_pages=team_pages,
                          user_posts=all_accessible_posts,
                          current_user_id=user_id,
-                         page_import_status=page_import_status)
+                         page_import_status=page_import_status,
+                         can_publish_directly=can_publish_directly)
 
 
 @app.route('/drafts', methods=['GET'])
@@ -4327,21 +4417,33 @@ def get_posts():
         if not accessible_page_ids:
             print(f"[GET /api/posts] User has no accessible pages")
             return {'success': True, 'posts': []}
+
+        purged = purge_expired_post_history()
+        if purged:
+            print(f"[GET /api/posts] Purged {purged} stale post(s) before fetching data")
         
-        # Get all posts published to any of these pages (not just user's own posts)
-        posts = db.session.query(Post).join(
+        # Only keep recent history plus upcoming posts to avoid loading thousands of rows
+        retention_cutoff = get_post_history_cutoff()
+        posts_query = db.session.query(Post).join(
             PostPageAssociation, Post.id == PostPageAssociation.post_id
         ).filter(
             PostPageAssociation.page_id.in_(accessible_page_ids),
-            Post.status != 'draft'  # Don't show draft posts in calendar
-        ).order_by(Post.scheduled_time.desc()).distinct().all()
-        
-        print(f"[GET /api/posts] Retrieved {len(posts)} total posts from database")
-        
-        # Sort by most recent date (scheduled_time if exists, otherwise sent_time)
-        posts = sorted(posts, key=lambda p: (
-            p.scheduled_time if p.scheduled_time else p.sent_time or datetime.min
-        ), reverse=True)
+            Post.status != 'draft',
+            db.or_(
+                Post.scheduled_time >= retention_cutoff,
+                Post.sent_time >= retention_cutoff,
+                db.and_(
+                    Post.scheduled_time.is_(None),
+                    Post.sent_time.is_(None),
+                    Post.created_at >= retention_cutoff
+                )
+            )
+        ).order_by(
+            func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at).desc()
+        ).distinct().limit(CALENDAR_POST_LIMIT)
+
+        posts = posts_query.all()
+        print(f"[GET /api/posts] Retrieved {len(posts)} posts (limit {CALENDAR_POST_LIMIT}, cutoff {retention_cutoff.date()})")
         
         posts_data = []
         for post in posts:
@@ -4990,6 +5092,17 @@ def publish_post_now(post_id):
         associations = PostPageAssociation.query.filter_by(post_id=post.id).all()
         if not associations:
             return {'success': False, 'error': 'No pages associated with this post'}, 400
+
+        unauthorized = [assoc.connected_page.page_name for assoc in associations
+                         if not can_publish_to_channel(user_id, assoc.page_id)]
+        if unauthorized:
+            return {
+                'success': False,
+                'error': (
+                    'You do not have publish permissions for: '
+                    + ', '.join(filter(None, unauthorized))
+                )
+            }, 403
         
         # Publish to each page
         published_count = 0
