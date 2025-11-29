@@ -4,7 +4,7 @@ Background tasks for fetching analytics from Facebook/Instagram APIs
 import logging
 from datetime import datetime, timedelta
 from flask import current_app, has_app_context
-from app import app, db, Post, PostPageAssociation, PostAnalytics, ConnectedPage
+from app import app, db, Post, PostPageAssociation, PostAnalytics, ConnectedPage, serialized_db_writer, _commit_with_retry
 from tiktok_service import TikTokApiError, fetch_tiktok_post_stats
 import requests
 
@@ -606,29 +606,31 @@ def check_and_publish_scheduled_posts():
             
             for post_id in post_ids:
                 try:
-                    # Attempt to lock this post by moving it to 'publishing' state
-                    rows_updated = Post.query.filter(
-                        Post.id == post_id,
-                        db.or_(
-                            Post.status == 'scheduled',
-                            db.and_(Post.status == 'publishing', Post.updated_at <= stale_cutoff)
+                    post = None
+                    with serialized_db_writer('scheduler-claim'):
+                        # Attempt to lock this post by moving it to 'publishing' state
+                        rows_updated = Post.query.filter(
+                            Post.id == post_id,
+                            db.or_(
+                                Post.status == 'scheduled',
+                                db.and_(Post.status == 'publishing', Post.updated_at <= stale_cutoff)
+                            )
+                        ).update(
+                            {
+                                'status': 'publishing',
+                                'updated_at': datetime.utcnow()
+                            },
+                            synchronize_session=False
                         )
-                    ).update(
-                        {
-                            'status': 'publishing',
-                            'updated_at': datetime.utcnow()
-                        },
-                        synchronize_session=False
-                    )
-                    
-                    if not rows_updated:
-                        db.session.rollback()
-                        continue  # Another worker already claimed it
-                    
-                    db.session.commit()  # Persist the lock
-                    post = Post.query.get(post_id)
+
+                        if not rows_updated:
+                            db.session.rollback()
+                        else:
+                            _commit_with_retry()
+                            post = Post.query.get(post_id)
+
                     if not post:
-                        continue
+                        continue  # Another worker already claimed it
                     
                     print(f"[SCHEDULER] Auto-publishing post {post.id} (scheduled for {post.scheduled_time})")
                     
@@ -637,8 +639,9 @@ def check_and_publish_scheduled_posts():
                     
                     if not associations:
                         print(f"[SCHEDULER] No pages associated with post {post.id}")
-                        post.status = 'failed'
-                        db.session.commit()
+                        with serialized_db_writer('scheduler-finalize'):
+                            post.status = 'failed'
+                            _commit_with_retry()
                         continue
                     
                     published_count = 0
@@ -677,22 +680,25 @@ def check_and_publish_scheduled_posts():
                     
                     # Update post status based on publish results
                     if published_count > 0:
-                        post.status = 'sent'
-                        post.sent_time = datetime.utcnow()
-                        post.scheduled_time = None
-                        db.session.commit()
+                        with serialized_db_writer('scheduler-finalize'):
+                            post.status = 'sent'
+                            post.sent_time = datetime.utcnow()
+                            post.scheduled_time = None
+                            _commit_with_retry()
                         logger.info(f"Post {post.id} auto-published to {published_count} page(s)")
                     else:
-                        post.status = 'failed'
-                        db.session.commit()
+                        with serialized_db_writer('scheduler-finalize'):
+                            post.status = 'failed'
+                            _commit_with_retry()
                         logger.error(f"Post {post.id} failed to publish: {' | '.join(errors)}")
                         
                 except Exception as e:
                     logger.error(f"Error processing scheduled post {post_id}: {e}")
                     db.session.rollback()
                     try:
-                        Post.query.filter_by(id=post_id).update({'status': 'scheduled'})
-                        db.session.commit()
+                        with serialized_db_writer('scheduler-reset'):
+                            Post.query.filter_by(id=post_id).update({'status': 'scheduled'})
+                            _commit_with_retry()
                     except Exception as reset_error:
                         db.session.rollback()
                         logger.error(f"Failed to reset status for post {post_id}: {reset_error}")
@@ -744,56 +750,39 @@ def daily_analytics_refresh():
 
 
 def setup_scheduler():
-    """Configure and start the APScheduler instance used by the worker."""
+    """
+    Setup APScheduler to run analytics refresh periodically and check scheduled posts
+    Call this from your Flask app initialization
+    """
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.interval import IntervalTrigger
         from apscheduler.triggers.cron import CronTrigger
-        from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
-
-        def _scheduler_listener(event):
-            if event.code == EVENT_JOB_MISSED:
-                logger.warning("Scheduler missed job %s", getattr(event, 'job_id', 'unknown'))
-            elif event.code == EVENT_JOB_ERROR:
-                logger.error(
-                    "Scheduler job %s raised an exception: %s",
-                    getattr(event, 'job_id', 'unknown'),
-                    event.exception,
-                )
-
-        scheduler = BackgroundScheduler(
-            job_defaults={'max_instances': 1, 'coalesce': True, 'misfire_grace_time': 120},
-            timezone="UTC",
-        )
-
-        scheduler.add_listener(_scheduler_listener, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
-
+        
+        scheduler = BackgroundScheduler()
+        
+        # Run daily analytics refresh at 2 AM UTC every day
         scheduler.add_job(
             func=daily_analytics_refresh,
             trigger=CronTrigger(hour=2, minute=0),
             id='daily_analytics_refresh',
             name='Daily analytics refresh for all users',
-            replace_existing=True,
+            replace_existing=True
         )
-
+        
+        # Check for scheduled posts every minute
         scheduler.add_job(
             func=check_and_publish_scheduled_posts,
             trigger=IntervalTrigger(minutes=1),
             id='check_scheduled_posts',
             name='Check and publish scheduled posts',
-            replace_existing=True,
-            max_instances=1,
+            replace_existing=True
         )
-
+        
         scheduler.start()
-        logger.info(
-            "Scheduler started with %d job(s); analytics @02:00 UTC, scheduled post scan every minute",
-            len(scheduler.get_jobs()),
-        )
-        return scheduler
-
+        logger.info("Scheduler started: daily analytics refresh at 2 AM UTC, scheduled posts check every minute")
+        
     except ImportError:
         logger.warning("APScheduler not installed. Automatic tasks will not run.")
     except Exception as e:
         logger.error(f"Error setting up scheduler: {e}")
-    return None
