@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import sessionmaker
 from utils.performance_monitor import monitor_performance, log_cache_hit, PerformanceTimer
 from sqlalchemy import func, inspect
+from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import secrets
@@ -1337,30 +1338,52 @@ def _fetch_facebook_post_attachments(post_id, access_token):
         return []
 
     url = f"https://graph.facebook.com/v18.0/{post_id}/attachments"
-    params = {
-        'access_token': access_token,
-        'fields': 'media_type,media,url,target,subattachments{media_type,media,url,target}'
-    }
+    field_variants = [
+        'media_type,media,url,target,subattachments{media_type,media,url,target}',
+        'media_type,media,url,subattachments{media_type,media,url}',
+        'media_type,media,url',
+        None  # let API decide when specific fields cause deprecation errors
+    ]
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-    except Exception as exc:  # pylint: disable=broad-except
-        print(f"[POSTS] Error fetching attachments for {post_id}: {exc}")
-        return []
+    last_error = None
+    for fields in field_variants:
+        params = {'access_token': access_token}
+        if fields:
+            params['fields'] = fields
 
-    if response.status_code != 200:
+        try:
+            response = requests.get(url, params=params, timeout=10)
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"[POSTS] Error fetching attachments for {post_id}: {exc}")
+            return []
+
+        if response.status_code == 200:
+            try:
+                return response.json().get('data', [])
+            except ValueError:
+                return []
+
         try:
             error_json = response.json()
         except ValueError:
             error_json = {'message': response.text}
-        print(f"[POSTS] Attachment fetch failed for {post_id}: {error_json}")
-        return []
 
-    try:
-        data = response.json().get('data', [])
-    except ValueError:
-        data = []
-    return data
+        error_info = (error_json.get('error') or {})
+        error_message = (error_info.get('message') or error_json.get('message') or '').lower()
+        error_code = error_info.get('code')
+        print(f"[POSTS] Attachment fetch failed for {post_id} with fields '{fields}': {error_json}")
+
+        if error_code == 12 and 'deprecate_post_aggregated_fields_for_attachement' in error_message:
+            print(f"[POSTS] Retrying attachment fetch for {post_id} without deprecated aggregated fields")
+            last_error = error_json
+            continue
+
+        last_error = error_json
+        break
+
+    if last_error:
+        print(f"[POSTS] Attachment fetch aborted for {post_id}: {last_error}")
+    return []
 
 
 def _extract_media_from_facebook_post(post_data):
@@ -1435,8 +1458,24 @@ def _attach_media_to_post(post, media_items):
 def store_facebook_posts_to_db(user_id, connected_page, posts_data):
     """Store Facebook posts to database, avoiding duplicates"""
     def _store():
+        page_id = getattr(connected_page, 'id', None)
+        if not page_id:
+            print("[POSTS] Skipping store: connected page missing id")
+            return 0
+
+        page_query = ConnectedPage.query.filter_by(id=page_id)
+        if not IS_SQLITE_BACKEND:
+            page_query = page_query.with_for_update()
+        locked_page = page_query.first()
+        if not locked_page:
+            print(f"[POSTS] Connected page {page_id} no longer exists; aborting history import")
+            return 0
+
+        # Rebind to the locked instance to avoid stale attributes during long imports
+        local_page = locked_page
+
         retention_cutoff = get_post_history_cutoff()
-        print(f"[POSTS] Storing {len(posts_data)} posts to database for page {connected_page.page_name} (cutoff {retention_cutoff.date()})")
+        print(f"[POSTS] Storing {len(posts_data)} posts to database for page {local_page.page_name} (cutoff {retention_cutoff.date()})")
         posts_added = 0
         
         for post_data in posts_data:
@@ -1444,7 +1483,7 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
             print(f"[POSTS] Processing post: {post_id}")
             print(f"[POSTS] Post data keys: {list(post_data.keys())}")
 
-            access_token = connected_page.page_access_token
+            access_token = local_page.page_access_token
             if post_id and access_token and not post_data.get('attachments'):
                 attachments_data = _fetch_facebook_post_attachments(post_id, access_token)
                 if attachments_data:
@@ -1470,13 +1509,13 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
                 # Check if association exists, if not create it
                 existing_assoc = PostPageAssociation.query.filter_by(
                     post_id=existing_post.id,
-                    page_id=connected_page.id
+                    page_id=local_page.id
                 ).first()
                 if not existing_assoc:
                     print(f"[POSTS] → Creating missing association for existing post")
                     association = PostPageAssociation(
                         post_id=existing_post.id,
-                        page_id=connected_page.id,
+                        page_id=local_page.id,
                         platform_post_id=post_id,
                         status='sent'
                     )
@@ -1495,7 +1534,7 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
                 
                 # Create post from Facebook data
                 # Use fetched message or fallback to generic text
-                content = message or f'Posted on {connected_page.page_name}'
+                content = message or f'Posted on {local_page.page_name}'
                 post = Post(
                     user_id=user_id,
                     title=post_id,
@@ -1510,7 +1549,7 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
                 # Create page association
                 association = PostPageAssociation(
                     post_id=post.id,
-                    page_id=connected_page.id,
+                    page_id=local_page.id,
                     platform_post_id=post_id,
                     status='sent'
                 )
@@ -1522,6 +1561,16 @@ def store_facebook_posts_to_db(user_id, connected_page, posts_data):
                     print(f"[POSTS] → Captured {attached} media attachment(s)")
                 posts_added += 1
                 print(f"[POSTS] → ✓ Added to DB with association (sent_time: {sent_time})")
+            except IntegrityError as exc:
+                db.session.rollback()
+                error_text = str(getattr(exc, 'orig', exc))
+                if 'post_page_association_page_id_fkey' in error_text:
+                    print(f"[POSTS] → ✗ Connected page {local_page.id} missing during store; aborting import")
+                    return posts_added
+                print(f"[POSTS] → ✗ Integrity error storing post {post_id}: {error_text}")
+                import traceback
+                traceback.print_exc()
+                continue
             except Exception as e:
                 print(f"[POSTS] → ✗ Error storing post: {e}")
                 import traceback
