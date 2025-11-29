@@ -138,9 +138,6 @@
                 </div>
             </div>
             <div class="view-controls">
-                <button class="btn btn-outline-primary" data-refresh-history onclick="refreshHistoricalPosts(event)" title="Fetch historical posts from connected pages">
-                    <i class="fas fa-sync-alt"></i> Refresh History
-                </button>
                 <a href="{{ url_for('drafts') }}" class="btn btn-outline-primary" title="Review pending draft approvals">
                     <i class="fas fa-file-alt"></i> Drafts
                 </a>
@@ -289,10 +286,12 @@
             <button type="button" class="post-detail-action-btn ghost" onclick="closePostDetailModal()">
                 Close
             </button>
+            {% if can_publish_directly %}
             <button type="button" class="post-detail-action-btn success" onclick="publishPostNow()">
                 <i class="fas fa-paper-plane"></i>
                 Publish
             </button>
+            {% endif %}
             <button type="button" class="post-detail-action-btn primary" onclick="editPost()">
                 <i class="fas fa-edit"></i>
                 Edit
@@ -318,6 +317,7 @@
     let isSidebarCollapsed = false;
     const MAX_POSTS_PER_DAY = 4;
     const pageImportStatus = {{ page_import_status|tojson }};
+    const canPublishDirectly = {{ can_publish_directly|tojson }};
     const DEFAULT_IMPORT_META = {
         state: 'idle',
         label: 'History not imported',
@@ -1219,6 +1219,10 @@
 
     // Publish post now
     function publishPostNow() {
+        if (!canPublishDirectly) {
+            showNotification('Publishing is disabled for your role.', 'error');
+            return;
+        }
         const postId = document.getElementById('postDetailModal').dataset.postId;
         const publishBtn = document.querySelector('#postDetailModal button[onclick="publishPostNow()"]');
         
@@ -1352,53 +1356,6 @@
                 console.error('Error loading posts:', error);
                 showNotification('Error loading posts', 'error');
             });
-    }
-
-    // Refresh historical posts from connected pages
-    function refreshHistoricalPosts(event) {
-        const btn = event?.currentTarget || document.querySelector('[data-refresh-history]');
-        const originalContent = btn.innerHTML;
-        
-        // Show loading state
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-        
-        fetch('/api/posts/refresh/historical', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
-            
-            if (data.success) {
-                if (Array.isArray(data.queued)) {
-                    data.queued.forEach(entry => {
-                        if (entry?.job) {
-                            updatePageImportUI(entry.job.page_id, buildImportMetaFromJob(entry.job));
-                        }
-                    });
-                }
-                const parts = [];
-                parts.push(`Queued ${data.jobs_created || 0} page import job(s)`);
-                if (Array.isArray(data.skipped) && data.skipped.length) {
-                    parts.push(`${data.skipped.length} skipped`);
-                }
-                showNotification(parts.join(' • '), 'success');
-                loadPostsOnCalendar();
-            } else {
-                showNotification(data.error || 'Error refreshing historical posts', 'error');
-            }
-        })
-        .catch(error => {
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
-            console.error('Error refreshing historical posts:', error);
-            showNotification('Error refreshing historical posts', 'error');
-        });
     }
 
     // Load posts on page load
