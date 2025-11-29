@@ -240,7 +240,7 @@ class PostMedia(db.Model):
     """Media files associated with posts (images, videos)"""
     id = db.Column(db.Integer, primary_key=True)
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, index=True)
-    media_url = db.Column(db.String(500), nullable=False)
+    media_url = db.Column(db.String(2048), nullable=False)  # Increased from 500 to 2048 for long URLs
     media_type = db.Column(db.String(50), nullable=False)  # 'image', 'video', 'gif'
     file_size = db.Column(db.Integer, nullable=True)
     duration = db.Column(db.Integer, nullable=True)  # in seconds for videos
@@ -1092,6 +1092,37 @@ def normalize_post_status_value(status):
     return normalized
 
 
+def sanitize_media_url(media_url, max_length=2048):
+    """Safely sanitize and truncate media URLs for storage.
+    
+    Args:
+        media_url: The URL to sanitize
+        max_length: Maximum allowed length (default 2048)
+    
+    Returns:
+        Sanitized URL, truncated to max_length if necessary
+    """
+    if not media_url:
+        return None
+    
+    media_url = str(media_url).strip()
+    
+    if len(media_url) > max_length:
+        print(f"[MEDIA] URL too long ({len(media_url)} chars), truncating to {max_length}")
+        # Try to truncate intelligently - keep the core URL
+        if '?' in media_url:
+            # Truncate query params first
+            base_url = media_url[:media_url.index('?')]
+            if len(base_url) <= max_length:
+                media_url = base_url
+            else:
+                media_url = media_url[:max_length]
+        else:
+            media_url = media_url[:max_length]
+    
+    return media_url
+
+
 def _get_utc_now():
     """Get current UTC time as naive datetime (for backward compatibility with existing code)."""
     from datetime import timezone
@@ -1444,6 +1475,13 @@ def _attach_media_to_post(post, media_items):
         media_url = media.get('url')
         if not media_url or media_url in existing_urls:
             continue
+        
+        # Sanitize and validate URL length
+        media_url = sanitize_media_url(media_url)
+        if not media_url:
+            print("[POSTS] Skipping empty media URL after sanitization")
+            continue
+        
         db.session.add(PostMedia(
             post_id=post.id,
             media_url=media_url,
@@ -1701,6 +1739,23 @@ def init_db():
             # db.drop_all()
             # Create all tables with updated schema
             db.create_all()
+            
+            # Handle PostgreSQL column migration for PostMedia.media_url
+            if not IS_SQLITE_BACKEND:
+                try:
+                    from sqlalchemy import text
+                    # Try to alter the media_url column to increase size from 500 to 2048
+                    db.session.execute(text(
+                        "ALTER TABLE post_media ALTER COLUMN media_url TYPE character varying(2048);"
+                    ))
+                    db.session.commit()
+                    print("[DB] Successfully migrated post_media.media_url column to VARCHAR(2048)")
+                except Exception as migration_exc:
+                    db.session.rollback()
+                    # Column might already be 2048, or might not exist yet (new install)
+                    if "does not exist" not in str(migration_exc).lower():
+                        print(f"[DB] Note: Column migration had an issue (may already be updated): {migration_exc}")
+            
             print("[DB] Database tables created successfully")
     except OSError as e:
         print(f"[DB] Error creating database tables: {e}")
@@ -5053,7 +5108,7 @@ def update_post(post_id):
                 # Create PostMedia record
                 post_media = PostMedia(
                     post_id=post.id,
-                    media_url=f'/uploads/{safe_filename}',
+                    media_url=sanitize_media_url(f'/uploads/{safe_filename}'),
                     media_type=media_type,
                     file_size=os.path.getsize(filepath) if os.path.exists(filepath) else 0
                 )
