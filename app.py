@@ -1912,7 +1912,10 @@ def publish():
     
     # Get recent posts only to avoid overwhelming the UI/rendering
     retention_cutoff = get_post_history_cutoff()
-    all_accessible_posts = db.session.query(Post).join(
+    display_time = func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at)
+    posts_result = db.session.query(
+        Post, display_time.label('display_time')
+    ).join(
         PostPageAssociation, Post.id == PostPageAssociation.post_id
     ).filter(
         PostPageAssociation.page_id.in_(accessible_page_ids),
@@ -1927,8 +1930,9 @@ def publish():
             )
         )
     ).order_by(
-        func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at).desc()
+        display_time.desc()
     ).distinct().limit(CALENDAR_POST_LIMIT).all()
+    all_accessible_posts = [row[0] for row in posts_result]
     
     can_publish_directly = any(can_publish_to_channel(user_id, page.id) for page in all_pages)
 
@@ -4424,7 +4428,10 @@ def get_posts():
         
         # Only keep recent history plus upcoming posts to avoid loading thousands of rows
         retention_cutoff = get_post_history_cutoff()
-        posts_query = db.session.query(Post).join(
+        display_time = func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at)
+        posts_query = db.session.query(
+            Post, display_time.label('display_time')
+        ).join(
             PostPageAssociation, Post.id == PostPageAssociation.post_id
         ).filter(
             PostPageAssociation.page_id.in_(accessible_page_ids),
@@ -4439,10 +4446,11 @@ def get_posts():
                 )
             )
         ).order_by(
-            func.coalesce(Post.scheduled_time, Post.sent_time, Post.created_at).desc()
+            display_time.desc()
         ).distinct().limit(CALENDAR_POST_LIMIT)
 
-        posts = posts_query.all()
+        posts_result = posts_query.all()
+        posts = [row[0] for row in posts_result]  # Extract Post objects from tuples
         print(f"[GET /api/posts] Retrieved {len(posts)} posts (limit {CALENDAR_POST_LIMIT}, cutoff {retention_cutoff.date()})")
         
         posts_data = []
