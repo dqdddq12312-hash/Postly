@@ -111,23 +111,9 @@
                         <!-- Schedule DateTime - Initially Hidden -->
                         <div id="scheduleSection" style="display: none;">
                             <label class="form-label">Schedule Time (Vietnam timezone: UTC+7) <span class="required">*</span></label>
-                            <div class="schedule-input-tabs">
-                                <label class="schedule-input-tab-label">
-                                    <input type="radio" name="schedule_input_type" value="picker" checked onchange="updateScheduleInputType()">
-                                    <span>Date & Time Picker</span>
-                                </label>
-                                <label class="schedule-input-tab-label">
-                                    <input type="radio" name="schedule_input_type" value="manual" onchange="updateScheduleInputType()">
-                                    <span>Manual Entry</span>
-                                </label>
-                            </div>
-                            <div id="schedulePickerInputs" class="datetime-inputs">
+                            <div class="datetime-inputs">
                                 <input type="date" id="scheduleDate" name="schedule_date">
                                 <input type="time" id="scheduleTime" name="schedule_time">
-                            </div>
-                            <div id="scheduleManualInput" class="manual-schedule-input" style="display: none;">
-                                <input type="text" id="scheduleManualDateTime" placeholder="YYYY-MM-DD HH:MM" pattern="\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}" title="Format: YYYY-MM-DD HH:MM (24-hour)">
-                                <span class="input-hint">Format: YYYY-MM-DD HH:MM (e.g., 2025-12-25 14:30)</span>
                             </div>
                             <div class="timezone-info">
                                 <i class="fas fa-info-circle"></i> Time is in Vietnam timezone (UTC+7)
@@ -1358,67 +1344,6 @@
         }
     }
 
-    function updateScheduleInputType() {
-        const pickerInputs = document.getElementById('schedulePickerInputs');
-        const manualInput = document.getElementById('scheduleManualInput');
-        const scheduleInputType = document.querySelector('input[name="schedule_input_type"]:checked');
-        const inputType = scheduleInputType ? scheduleInputType.value : 'picker';
-        
-        if (inputType === 'manual') {
-            pickerInputs.style.display = 'none';
-            manualInput.style.display = 'block';
-            document.getElementById('scheduleDate').required = false;
-            document.getElementById('scheduleTime').required = false;
-            document.getElementById('scheduleManualDateTime').required = true;
-            
-            // If there are values in picker, populate manual input
-            const dateVal = document.getElementById('scheduleDate').value;
-            const timeVal = document.getElementById('scheduleTime').value;
-            if (dateVal && timeVal) {
-                document.getElementById('scheduleManualDateTime').value = `${dateVal} ${timeVal}`;
-            }
-        } else {
-            pickerInputs.style.display = 'grid';
-            manualInput.style.display = 'none';
-            document.getElementById('scheduleDate').required = true;
-            document.getElementById('scheduleTime').required = true;
-            document.getElementById('scheduleManualDateTime').required = false;
-            
-            // If there's a manual value, try to parse it into picker inputs
-            const manualVal = document.getElementById('scheduleManualDateTime').value;
-            if (manualVal) {
-                const parts = manualVal.split(' ');
-                if (parts.length === 2) {
-                    document.getElementById('scheduleDate').value = parts[0];
-                    document.getElementById('scheduleTime').value = parts[1];
-                }
-            }
-            
-            ensureScheduleInputsValid();
-        }
-    }
-    
-    function getScheduledDateTime() {
-        const scheduleInputType = document.querySelector('input[name="schedule_input_type"]:checked');
-        const inputType = scheduleInputType ? scheduleInputType.value : 'picker';
-        
-        if (inputType === 'manual') {
-            const manualVal = document.getElementById('scheduleManualDateTime').value;
-            if (!manualVal) return null;
-            // Validate format
-            if (!/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(manualVal)) {
-                alert('Invalid format. Use: YYYY-MM-DD HH:MM');
-                return null;
-            }
-            const parts = manualVal.split(' ');
-            return { date: parts[0], time: parts[1] };
-        } else {
-            const date = document.getElementById('scheduleDate').value;
-            const time = document.getElementById('scheduleTime').value;
-            return { date, time };
-        }
-    }
-
     function updateScheduleUI() {
         const scheduleSection = document.getElementById('scheduleSection');
         const publishTypeInput = document.querySelector('input[name="publish_type"]:checked');
@@ -1426,13 +1351,13 @@
         
         if (publishType === 'scheduled') {
             scheduleSection.style.display = 'block';
-            updateScheduleInputType(); // Show default input type (picker)
+            document.getElementById('scheduleDate').required = true;
+            document.getElementById('scheduleTime').required = true;
             ensureScheduleInputsValid();
         } else {
             scheduleSection.style.display = 'none';
             document.getElementById('scheduleDate').required = false;
             document.getElementById('scheduleTime').required = false;
-            document.getElementById('scheduleManualDateTime').required = false;
         }
 
         setSubmitButtonLabel();
@@ -1472,12 +1397,12 @@
         formData.append('publish_type', publishTypeValue);
 
         if (publishTypeValue === 'scheduled') {
-            const scheduleDateTime = getScheduledDateTime();
-            if (!scheduleDateTime || !scheduleDateTime.date || !scheduleDateTime.time) {
-                alert('Please enter date and time');
+            const date = document.getElementById('scheduleDate').value;
+            const time = document.getElementById('scheduleTime').value;
+            if (!date || !time) {
+                alert('Please select date and time');
                 return;
             }
-            const { date, time } = scheduleDateTime;
             if (isScheduleSelectionInPast(date, time)) {
                 alert('Please choose a future date and time.');
                 ensureScheduleInputsValid();
