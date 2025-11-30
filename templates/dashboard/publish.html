@@ -566,19 +566,42 @@
     }
 
     // Get filtered posts
+    // Get filtered posts with multi-page expansion
     function getFilteredPosts() {
-        if (!filteredPageId) {
-            return allPosts;
+        let posts = allPosts;
+        
+        // If page filter is active, filter by page
+        if (filteredPageId) {
+            posts = posts.filter(post => {
+                return post.pages && post.pages.some(p => p.id === filteredPageId);
+            });
         }
         
-        return allPosts.filter(post => {
-            return post.pages && post.pages.some(p => p.id === filteredPageId);
+        // Expand posts scheduled for multiple pages into separate calendar entries
+        const expandedPosts = [];
+        posts.forEach(post => {
+            if (post.pages && post.pages.length > 1 && (post.status === 'scheduled' || post.status === 'publishing')) {
+                // For scheduled posts with multiple pages, create a separate entry for each page
+                post.pages.forEach(page => {
+                    expandedPosts.push({
+                        ...post,
+                        pages: [page], // Single page for calendar display
+                        _expandedFromMulti: true, // Mark as expanded
+                        _originalId: post.id
+                    });
+                });
+            } else {
+                // Regular posts (draft, sent, or single-page scheduled)
+                expandedPosts.push(post);
+            }
         });
+        
+        return expandedPosts;
     }
 
     // Create post badge HTML
     function createPostBadge(post) {
-        const dateStr = post.scheduled_time || post.sent_time;
+        const dateStr = post.scheduled_time || post.sent_time || post.created_at;
         const time = dateStr ? formatTime(dateStr) : '--:--';
         const normalizedStatus = normalizePostStatus(post.status);
 
@@ -589,7 +612,7 @@
             : '<i class="fas fa-share-alt"></i>';
         
         const html = `
-            <div class="post-badge ${normalizedStatus}" data-post-id="${post.id}" onclick="showPostDetail(${post.id})">
+            <div class="post-badge ${normalizedStatus}" data-post-id="${post.id}" data-expanded-from="${post._expandedFromMulti ? 'multi' : 'single'}" onclick="showPostDetail(${post._originalId || post.id})">
                 <span class="badge-time">${time}</span>
                 <span class="badge-dot ${normalizedStatus}"></span>
                 <div class="badge-platforms">
@@ -706,8 +729,19 @@
                 const postsContainer = document.createElement('div');
                 postsContainer.className = 'calendar-day-posts-grid';
                 
+                // Filter out duplicates created by multi-page expansion for same day display
+                const uniquePostsForDay = [];
+                const seenPostIds = new Set();
+                postsForDay.forEach(post => {
+                    const uniqueKey = post._originalId ? post._originalId : post.id;
+                    if (!seenPostIds.has(uniqueKey)) {
+                        seenPostIds.add(uniqueKey);
+                        uniquePostsForDay.push(post);
+                    }
+                });
+                
                 const extraBadges = [];
-                postsForDay.forEach((post, index) => {
+                uniquePostsForDay.forEach((post, index) => {
                     const badgeEl = createPostBadgeElement(post);
                     if (index >= MAX_POSTS_PER_DAY) {
                         badgeEl.classList.add('extra-post');
@@ -870,18 +904,32 @@
             // View post button - prefer backend-provided permalinks
             const viewButton = document.getElementById('publishedPostViewButton');
             const pages = Array.isArray(post.pages) ? post.pages : [];
-            const pageWithViewUrl = pages.find(p => p.view_url);
-            let viewUrl = (pageWithViewUrl && pageWithViewUrl.view_url) ? pageWithViewUrl.view_url : null;
+            let viewUrl = null;
 
+            // First, try page associations from post.pages if they have view_url
+            const pageWithViewUrl = pages.find(p => p.view_url);
+            if (pageWithViewUrl && pageWithViewUrl.view_url) {
+                viewUrl = pageWithViewUrl.view_url;
+            }
+
+            // Fallback to post.view_url if set
             if (!viewUrl && post.view_url) {
                 viewUrl = post.view_url;
             }
 
+            // If still no URL, construct from platform_post_id and page info
             if (!viewUrl) {
-                const pageWithPermalink = pages.find(p => p.platform_post_id);
-                if (pageWithPermalink) {
-                    viewUrl = getPostUrl(pageWithPermalink);
+                // Find page with platform_post_id
+                const pageWithPostId = pages.find(p => p.platform_post_id);
+                if (pageWithPostId) {
+                    viewUrl = getPostUrl({
+                        platform: pageWithPostId.platform,
+                        platform_post_id: pageWithPostId.platform_post_id,
+                        platform_page_id: pageWithPostId.platform_page_id,
+                        page_username: pageWithPostId.page_username
+                    });
                 } else if (post.platform_post_id && primaryPage) {
+                    // Last resort: use primary page with post's platform_post_id
                     viewUrl = getPostUrl({
                         platform: primaryPage.platform,
                         platform_post_id: post.platform_post_id,
@@ -891,9 +939,16 @@
                 }
             }
 
+            // Set button visibility and href
             if (viewUrl) {
                 viewButton.href = viewUrl;
                 viewButton.style.display = 'inline-flex';
+                viewButton.onclick = function(e) {
+                    // Ensure link opens and fires click event
+                    if (!e.target.href) {
+                        e.preventDefault();
+                    }
+                };
             } else {
                 viewButton.style.display = 'none';
             }
@@ -1118,35 +1173,52 @@
             return null;
         }
 
+        // Return backend-provided URL if available
         if (page.view_url) {
             return page.view_url;
         }
 
         if (!page.platform_post_id) {
+            console.warn('No platform_post_id found for page:', page);
             return null;
         }
 
         const platform = (page.platform || '').toLowerCase();
-        const platformPostId = page.platform_post_id;
-        const username = (page.page_username || '').replace(/^@/, '');
+        const platformPostId = String(page.platform_post_id).trim();
+        const username = (page.page_username || '').trim().replace(/^@/, '');
+        const platformPageId = (page.platform_page_id || '').trim();
 
         if (platform === 'facebook') {
+            // Facebook: postid can be "pageId_postId" or just "postId"
             const parts = platformPostId.split('_');
-            const postId = parts.length > 1 ? parts[1] : parts[0];
-            const pageIdentifier = username || page.platform_page_id || parts[0];
+            let postId = platformPostId;
+            let pageIdentifier = username || platformPageId;
+            
+            if (parts.length > 1) {
+                // Extract actual post ID (last part)
+                postId = parts[parts.length - 1];
+                pageIdentifier = pageIdentifier || parts[0]; // Use first part as fallback
+            }
+            
             if (pageIdentifier && postId) {
                 return `https://www.facebook.com/${pageIdentifier}/posts/${postId}`;
             }
-            return `https://www.facebook.com/${platformPostId}`;
+            
+            // Fallback to direct platform post ID if we can't parse
+            return `https://www.facebook.com/photo.php?fbid=${platformPostId}`;
         }
 
         if (platform === 'instagram') {
-            return `https://www.instagram.com/p/${platformPostId}/`;
+            // Instagram URLs use the shortcode (platform_post_id is the media object ID, shortcode is in platform_post_id)
+            if (platformPostId && platformPostId.match(/^[A-Za-z0-9_-]+$/)) {
+                return `https://www.instagram.com/p/${platformPostId}/`;
+            }
+            return null;
         }
 
         if (platform === 'tiktok') {
-            const handle = username || (page.platform_page_id ? String(page.platform_page_id).replace(/^@/, '') : '');
-            if (handle) {
+            const handle = username || platformPageId;
+            if (handle && platformPostId) {
                 return `https://www.tiktok.com/@${handle}/video/${platformPostId}`;
             }
         }
