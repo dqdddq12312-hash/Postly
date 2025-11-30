@@ -217,10 +217,10 @@
 
             <!-- Action buttons -->
             <div class="published-post-actions">
-                <button type="button" id="publishedPostViewButton" class="post-detail-cta primary" onclick="openPublishedPostInNewTab()">
+                <a id="publishedPostViewButton" class="post-detail-cta primary" target="_blank" rel="noopener noreferrer" href="#">
                     <i class="fas fa-external-link-alt"></i>
                     View Post
-                </button>
+                </a>
                 <button type="button" class="post-detail-cta ghost" onclick="closePublishedPostDetailModal()">
                     Close
                 </button>
@@ -633,7 +633,6 @@
         const totalCells = Math.ceil((startingDayOfWeek + daysInMonth) / 7) * 7;
         
         // Group posts by date (include draft, scheduled, and sent posts)
-        // When multiple pages are selected, create separate visual entries for each page
         const postsMap = {};
         filteredPosts.forEach(post => {
             // Show all posts that have a scheduled_time or sent_time
@@ -650,24 +649,7 @@
             if (!postsMap[dateKey]) {
                 postsMap[dateKey] = [];
             }
-            
-            // Create separate visual entries for each page if multiple pages are selected
-            const pages = Array.isArray(post.pages) ? post.pages : [];
-            if (pages.length > 1) {
-                // Create a separate badge for each page
-                pages.forEach(page => {
-                    const pageSpecificPost = { 
-                        ...post, 
-                        pages: [page], 
-                        _pageFilterKey: `${post.id}_${page.id}`,
-                        _isMultiPageVariant: true
-                    };
-                    postsMap[dateKey].push(pageSpecificPost);
-                });
-            } else {
-                // Single page post - add as is
-                postsMap[dateKey].push(post);
-            }
+            postsMap[dateKey].push(post);
         });
         
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -789,7 +771,7 @@
     // Show post detail modal
     function showPostDetail(postId) {
         // Convert to number for proper comparison
-        let post = allPosts.find(p => String(p.id) === String(postId));
+        const post = allPosts.find(p => String(p.id) === String(postId));
         if (!post) {
             console.error('Post not found for ID:', postId);
             return;
@@ -802,7 +784,7 @@
             // Published post - show new detailed modal
             showPublishedPostDetail(post);
         } else {
-            // Scheduled/draft post - show edit modal with media and content
+            // Scheduled/draft post - show edit modal
             showScheduledPostDetail(post);
         }
     }
@@ -912,10 +894,6 @@
             if (viewUrl) {
                 viewButton.href = viewUrl;
                 viewButton.style.display = 'inline-flex';
-                viewButton.onclick = (e) => {
-                    e.preventDefault();
-                    window.open(viewUrl, '_blank', 'noopener,noreferrer');
-                };
             } else {
                 viewButton.style.display = 'none';
             }
@@ -1035,16 +1013,6 @@
             detailModal.classList.add('active');
         } catch (error) {
             console.error('Error in showScheduledPostDetail:', error);
-        }
-    }
-
-    // Open published post in new tab
-    function openPublishedPostInNewTab() {
-        const viewButton = document.getElementById('publishedPostViewButton');
-        if (viewButton && viewButton.href && viewButton.href !== '#') {
-            window.open(viewButton.href, '_blank', 'noopener,noreferrer');
-        } else {
-            alert('Post URL not available');
         }
     }
 
