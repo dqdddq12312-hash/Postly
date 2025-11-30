@@ -722,7 +722,7 @@
                     `}
                 </td>
                 <td class="sheet-col-actions">
-                    ${!isNewPost ? `<button class="cell-action-btn" onclick="openCreatePostModalForEdit(${index})" title="Edit details">
+                    ${!isNewPost ? `<button class="cell-action-btn" onclick="editRowDetails(${index})" title="Edit details">
                         <i class="fas fa-edit"></i> Edit
                     </button>` : ''}
                     <button class="cell-action-btn danger" onclick="deleteRow(${index})" title="Delete row">
@@ -1310,67 +1310,6 @@
         const isSelected = element.classList.contains('selected');
         element.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     }
-
-    function openCreatePostModalForEdit(index) {
-        const row = sheetData[index];
-        if (!row.id) {
-            // New post - use regular edit modal
-            editRowDetails(index);
-            return;
-        }
-        
-        // For existing posts, open create-post-modal with data
-        const modal = document.querySelector('.modal-content.create-post-modal');
-        if (!modal) {
-            console.error('create-post-modal not found');
-            return;
-        }
-        
-        // Store the row index so we can update it after modal closes
-        modal.dataset.editRowIndex = index;
-        modal.dataset.isEditMode = 'true';
-        
-        // Populate modal fields from row data
-        const captionField = modal.querySelector('textarea[placeholder*="mind"], textarea[placeholder*="caption"]');
-        if (captionField) {
-            captionField.value = row.caption;
-            captionField.focus();
-        }
-        
-        // Set publish type and time
-        const publishTypeSelectors = modal.querySelectorAll('input[name="publish_type"]');
-        publishTypeSelectors.forEach(radio => {
-            if (radio.value === 'scheduled') {
-                radio.checked = true;
-            }
-        });
-        
-        // Set date and time inputs
-        const dateInputs = modal.querySelectorAll('input[type="date"]');
-        const timeInputs = modal.querySelectorAll('input[type="time"]');
-        
-        if (dateInputs.length > 0) {
-            dateInputs[0].value = row.date;
-        }
-        if (timeInputs.length > 0) {
-            timeInputs[0].value = row.time;
-        }
-        
-        // Set pages - check matching page checkboxes
-        const pageCheckboxes = modal.querySelectorAll('input[data-page-id], input[name*="page"]');
-        const selectedPageIds = row.pages.map(p => p.id);
-        pageCheckboxes.forEach(checkbox => {
-            const pageId = parseInt(checkbox.dataset.pageId || checkbox.value);
-            if (!isNaN(pageId)) {
-                checkbox.checked = selectedPageIds.includes(pageId);
-            }
-        });
-        
-        // Show the modal
-        modal.parentElement.style.display = 'flex';
-        modal.style.display = 'flex';
-        
-        console.log(`Opened create-post-modal to edit row ${index}: "${row.caption.substring(0, 30)}..."`);\n    }
 
     function editRowDetails(index) {
         const row = sheetData[index];
